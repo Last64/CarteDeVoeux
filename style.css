@@ -1,0 +1,15 @@
+/* Le fond noir reste sur <html> : sur <body> il cacherait la vidéo de la caméra */
+html { background: #000; }
+html, body { margin: 0; height: 100%; overflow: hidden;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.bulle { position: fixed; left: 50%; transform: translateX(-50%); z-index: 10;
+  background: rgba(0, 0, 0, .65); color: #fff; padding: 10px 16px; border-radius: 999px;
+  font-size: 15px; text-align: center; max-width: calc(100vw - 48px); box-sizing: border-box; }
+#aide { top: calc(16px + env(safe-area-inset-top)); }
+#chargement { top: 50%; }
+#figer { position: fixed; left: 50%; transform: translateX(-50%); z-index: 10;
+  bottom: calc(24px + env(safe-area-inset-bottom)); border: 0; border-radius: 999px;
+  padding: 14px 22px; font-size: 16px; font-weight: 600; background: #fff; color: #000091; }
+#figer[aria-pressed="true"] { background: #000091; color: #fff; }
+[hidden] { display: none !important; }
+.a-enter-vr, .a-enter-ar { display: none !important; }
