@@ -42,6 +42,7 @@ Dessin (Illustrator)  →  calques PNG  →  Blender (animation)  →  carte.glb
 
 - Chaque calque est un plan à la taille exacte de son PNG, placé à sa position sur la carte.
 - Son **origine est sur sa charnière**, c'est-à-dire en bas de l'élément.
+- Il se lève jusqu'à **45°**, et pas 90° : à 90°, un élément filmé de face est vu par la tranche et disparaît.
 - Le matériau est **sans ombre** : nœuds *Light Path > Is Camera Ray* + *Emission*,
   que l'export glTF transforme en `KHR_materials_unlit`. Les couleurs restent donc les mêmes quel que soit l'éclairage.
 - La transparence du PNG passe par un nœud *Math > Round*, qui donne une découpe nette (`alphaMode MASK` dans le glTF).
@@ -51,14 +52,14 @@ Dessin (Illustrator)  →  calques PNG  →  Blender (animation)  →  carte.glb
 | Images | Ce qui se passe | Technique |
 |---|---|---|
 | 0 | La carte apparaît coloriée, à plat | – |
-| 8 → 76 | Les éléments se lèvent un par un, de l'arrière vers l'avant | Rotation X de 0° à 90°, interpolation **Back** (rebond) |
+| 8 → 76 | Les éléments se lèvent un par un, de l'arrière vers l'avant | Rotation X de 0° à 45°, interpolation **Back** (rebond) |
 | 30 → 270 | Les sapins et les feuilles se balancent | Rotation Y de ± 2 à 3° |
-| 60 → 252 | La cigogne s'envole, fait le tour de la scène et se repose | Vide parent *Cigogne* (position, cap) ; les ailes tournent autour de l'axe du corps |
+| 60 → 252 | La cigogne s'envole, fait le tour de la scène et se repose | Vide parent *Cigogne* : position, inclinaison à 45°, demi-tour (rotation Y) ; les ailes tournent autour de l'axe du corps |
 | 84 et 196 | Vague 2-0-2-7 | Position Z, interpolation **Bounce** |
 | 86 → 246 | 7 feux d'artifice (version normale) | Une fusée qui monte, puis une gerbe animée par **clés de forme** (*Base → Explosion → Fin*) |
 | 0 → 288 | Neige (version sans feux) | 48 flocons qui descendent en boucle (4 s ou 6 s par chute) en se balançant |
 | 70 → 250 | Étoiles qui scintillent | Échelle de 0 à 1 puis 0 |
-| 258 → 285 | Tout se replie, puis l'animation recommence | Rotation X de 90° à 0°, interpolation **Back** |
+| 258 → 285 | Tout se replie, puis l'animation recommence | Rotation X de 45° à 0°, interpolation **Back** |
 
 Les courbes se voient dans le *Graph Editor* et la *Dope Sheet*.
 Le script `blender/construire_carte.py`, dans l'onglet *Scripting*, reconstruit toute la scène.
@@ -125,6 +126,8 @@ La caméra ne fonctionne qu'en **https**, d'où GitHub Pages :
 - **Le dessin** : recompiler `assets/targets.mind` avec la nouvelle image, puis refaire les calques concernés.
 
 ## Questions possibles à l'oral
+
+- **Pourquoi les éléments se lèvent à 45° et pas à 90° ?** À 90°, quand on filme la carte de face, les éléments sont vus par la tranche et deviennent invisibles. À 45°, ils restent visibles de face (à 71 %) comme de biais. La cigogne et les étoiles sont aussi penchées à 45° vers le spectateur.
 
 - **Pourquoi un .glb ?** C'est un seul fichier qui contient la géométrie, les textures et l'animation. Il est léger (1,2 Mo) et lu directement par A-Frame (three.js).
 - **Pourquoi des matériaux sans ombre ?** Pour garder les couleurs exactes du coloriage. Ainsi, le rendu ne dépend pas d'une lumière virtuelle qui ne correspond pas à la vraie pièce.

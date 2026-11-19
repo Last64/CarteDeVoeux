@@ -8,7 +8,7 @@ Repères à retenir pour l'oral :
 - La carte fait 1 m de large dans Blender (1 unité = largeur de la carte, comme dans MindAR).
 - Elle est posée au sol : la vue de dessus (pavé num. 7) = la carte imprimée.
 - Chaque calque PNG est un plan dont l'origine est sur sa "charnière" (le bas de l'élément).
-  Le pop-up = rotation X de 0° (à plat) à 90° (debout).
+  Le pop-up = rotation X de 0° (à plat) à 45° (relevé) : visible de face comme de biais.
 - Les matériaux sont "sans ombre" (unlit) et découpés par l'alpha du PNG.
 - L'animation dure 12 s (288 images à 24 i/s) et boucle : tout se replie à la fin.
 - Deux versions : "Feux d'artifice" (assets/carte.glb) ou "Neige" (assets/carte-sans-feux.glb).
@@ -162,13 +162,18 @@ def cle(ob, chemin, index, frame, valeur, interp='BEZIER', easing='AUTO', back=N
     return fc
 
 
+# Angle final des éléments : 45° et pas 90°.
+# À 90°, un élément filmé de face (téléphone face à la carte) est vu par la tranche : il disparaît.
+# À 45°, il reste bien visible de face (71 %) comme de biais (100 % vu à 45°).
+ANGLE = 45
+
 def popup(ob, debut, repli, duree=14):
-    """Le calque se lève (0 -> 90°, avec rebond) puis se replie à la fin."""
+    """Le calque se lève (0 -> 45°, avec rebond) puis se replie à la fin."""
     R = math.radians
     cle(ob, 'rotation_euler', 0, 0, 0.0, 'CONSTANT')
     cle(ob, 'rotation_euler', 0, debut, 0.0, 'BACK', 'EASE_OUT', back=1.9)
-    cle(ob, 'rotation_euler', 0, debut + duree, R(90), 'CONSTANT')
-    cle(ob, 'rotation_euler', 0, repli, R(90), 'BACK', 'EASE_IN', back=1.3)
+    cle(ob, 'rotation_euler', 0, debut + duree, R(ANGLE), 'CONSTANT')
+    cle(ob, 'rotation_euler', 0, repli, R(ANGLE), 'BACK', 'EASE_IN', back=1.3)
     cle(ob, 'rotation_euler', 0, repli + 10, 0.0, 'CONSTANT')
     cle(ob, 'rotation_euler', 0, FIN, 0.0, 'CONSTANT')
 
@@ -233,30 +238,32 @@ def construire_cigogne(racine, coll):
     maison = (2098, 222)                               # pivot du corps (pixels du dessin)
     hx, hy = px(*maison)
     cig = vide("Cigogne", coll, (hx, hy, 0.002), parent=racine, taille=0.04, forme='SPHERE')
+    # ordre YXZ : d'abord le retournement (Y) pour changer de sens, puis l'inclinaison (X) vers le spectateur
+    cig.rotation_mode = 'YXZ'
     corps = plan_calque('cigogne_corps', maison, coll, z=0.0, parent=cig)
     aile_av = plan_calque('cigogne_aile_avant', (2100, 222), coll, z=0.0008, parent=cig)
     aile_ar = plan_calque('cigogne_aile_arriere', (2128, 232), coll, z=-0.0008, parent=cig)
 
-    # trajectoire : (image, x, y, z, cap en degrés) — cap 0 = bec vers la gauche
+    # trajectoire : (image, x, y, z, sens en degrés) — 0 = bec vers la gauche, 180 = vers la droite
     vol = [(74, hx - 0.02, hy, 0.13, 0), (92, 0.12, 0.06, 0.26, 0), (110, -0.08, 0.02, 0.32, 0),
-           (128, -0.28, 0.04, 0.30, -20), (142, -0.40, 0.12, 0.27, -90), (156, -0.32, 0.21, 0.30, -180),
-           (174, -0.05, 0.23, 0.36, -180), (192, 0.20, 0.21, 0.34, -190), (208, 0.38, 0.14, 0.28, -270),
-           (222, 0.40, 0.07, 0.21, -320), (236, hx + 0.01, hy, 0.12, -360)]
+           (128, -0.28, 0.04, 0.30, 20), (142, -0.40, 0.12, 0.27, 90), (156, -0.32, 0.21, 0.30, 180),
+           (174, -0.05, 0.23, 0.36, 180), (192, 0.20, 0.21, 0.34, 190), (208, 0.38, 0.14, 0.28, 270),
+           (222, 0.40, 0.07, 0.21, 330), (236, hx + 0.01, hy, 0.12, 360)]
     # au sol, à plat (comme sur la carte)
     for f in (0, 60):
         for i, v in enumerate((hx, hy, 0.002)): cle(cig, 'location', i, f, v)
-        cle(cig, 'rotation_euler', 0, f, 0.0); cle(cig, 'rotation_euler', 2, f, 0.0)
+        cle(cig, 'rotation_euler', 0, f, 0.0); cle(cig, 'rotation_euler', 1, f, 0.0)
         for i in range(3): cle(cig, 'scale', i, f, 1.0)
     # envol puis tour de la scène
     for (f, x, y, z, cap) in vol:
         for i, v in enumerate((x, y, z)): cle(cig, 'location', i, f, v)
-        cle(cig, 'rotation_euler', 0, f, R(90))
-        cle(cig, 'rotation_euler', 2, f, R(cap))
+        cle(cig, 'rotation_euler', 0, f, R(ANGLE))
+        cle(cig, 'rotation_euler', 1, f, R(cap))
         for i in range(3): cle(cig, 'scale', i, f, 2.2)
     # elle se repose à sa place
     for f in (252, FIN):
         for i, v in enumerate((hx, hy, 0.002)): cle(cig, 'location', i, f, v)
-        cle(cig, 'rotation_euler', 0, f, 0.0); cle(cig, 'rotation_euler', 2, f, R(-360))
+        cle(cig, 'rotation_euler', 0, f, 0.0); cle(cig, 'rotation_euler', 1, f, R(360))
         for i in range(3): cle(cig, 'scale', i, f, 1.0)
     # battements d'ailes (autour de l'axe du corps)
     for aile, signe in ((aile_av, 1), (aile_ar, -1)):
@@ -373,7 +380,7 @@ def maillage_etoile():
     v = [(0, 0, 0)]
     for i in range(8):
         a = i * math.pi / 4; r = 0.016 if i % 2 == 0 else 0.004
-        v.append((r * math.sin(a), 0, r * math.cos(a)))      # dans le plan XZ : face au spectateur
+        v.append((r * math.sin(a), r * math.cos(a), 0))      # à plat, puis penchée par la rotation de l'objet
     f = [(0, 1 + i, 1 + (i + 1) % 8) for i in range(8)]
     me.from_pydata(v, [], f)
     return me
@@ -389,6 +396,8 @@ def construire_etoiles(racine, coll):
     for n, (x, y, z, f0) in enumerate(ETOILES, start=1):
         e = bpy.data.objects.new(f"Etoile_{n}", me); coll.objects.link(e)
         e.parent = groupe; e.location = (x, y, z)
+        e.rotation_mode = 'ZYX'                              # tourne sur elle-même (Z), penchée à 45° (X)
+        e.rotation_euler = (math.radians(ANGLE), 0, 0)
         for i in range(3): cle(e, 'scale', i, 0, 0.0, 'CONSTANT')
         f = f0
         while f + 16 < 250:
@@ -396,8 +405,8 @@ def construire_etoiles(racine, coll):
             for i in range(3): cle(e, 'scale', i, f + 6, 1.0, 'QUAD', 'EASE_IN')
             for i in range(3): cle(e, 'scale', i, f + 16, 0.0, 'CONSTANT')
             f += 52
-        cle(e, 'rotation_euler', 1, 0, 0.0, 'LINEAR')
-        cle(e, 'rotation_euler', 1, FIN, math.radians(360), 'LINEAR')
+        cle(e, 'rotation_euler', 2, 0, 0.0, 'LINEAR')
+        cle(e, 'rotation_euler', 2, FIN, math.radians(360), 'LINEAR')
         for i in range(3): cle(e, 'scale', i, FIN, 0.0, 'CONSTANT')
     return groupe
 
