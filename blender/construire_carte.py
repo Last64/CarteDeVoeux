@@ -1,16 +1,18 @@
 """
-Carte de voeux 2027 — construction de la scène Blender (pop-up animé pour la RA).
+Carte de voeux 2027 — construction de la scène Blender (carte animée pour la RA).
 
 Ce script refait toute la scène : il suffit de l'ouvrir dans l'éditeur de texte
 de Blender (onglet Scripting) et de cliquer sur "Run Script".
 
 Repères à retenir pour l'oral :
 - La carte fait 1 m de large dans Blender (1 unité = largeur de la carte, comme dans MindAR).
-- Elle est posée au sol : la vue de dessus (pavé num. 7) = la carte imprimée.
-- Chaque calque PNG est un plan dont l'origine est sur sa "charnière" (le bas de l'élément).
-  Le pop-up = rotation X de 0° (à plat) à 45° (relevé) : visible de face comme de biais.
+- On la regarde DE FACE, comme sur un écran ou tenue devant soi :
+    +X = droite de la carte, +Y = HAUT de la carte, +Z = vers la personne qui regarde.
+  Dans Blender, la vue de dessus (pavé num. 7) = ce que voit le téléphone.
+- Les éléments ne se lèvent pas : ils SORTENT de la carte vers nous, chacun à sa profondeur
+  (comme les décors d'un théâtre). Plus un élément est devant dans le dessin, plus il avance.
 - Les matériaux sont "sans ombre" (unlit) et découpés par l'alpha du PNG.
-- L'animation dure 12 s (288 images à 24 i/s) et boucle : tout se replie à la fin.
+- L'animation dure 12 s (288 images à 24 i/s) et boucle : tout rentre dans la carte à la fin.
 - Deux versions : "Feux d'artifice" (assets/carte.glb) ou "Neige" (assets/carte-sans-feux.glb).
   On passe de l'une à l'autre avec l'appareil photo des 2 collections dans l'Outliner.
 """
@@ -162,37 +164,54 @@ def cle(ob, chemin, index, frame, valeur, interp='BEZIER', easing='AUTO', back=N
     return fc
 
 
-# Angle final des éléments : 45° et pas 90°.
-# À 90°, un élément filmé de face (téléphone face à la carte) est vu par la tranche : il disparaît.
-# À 45°, il reste bien visible de face (71 %) comme de biais (100 % vu à 45°).
-ANGLE = 45
+R = math.radians
 
-def popup(ob, debut, repli, duree=14):
-    """Le calque se lève (0 -> 45°, avec rebond) puis se replie à la fin."""
-    R = math.radians
+# Profondeur de chaque élément quand il est sorti (en largeur de carte : 0,1 = 2 cm).
+# De l'arrière du paysage vers l'avant : plus c'est devant dans le dessin, plus ça avance.
+PROFONDEUR = {
+    'vignes': 0.022, 'feuilles': 0.035, 'chateau': 0.040,
+    'chiffre_2a': 0.050, 'chiffre_0': 0.053, 'chiffre_2b': 0.050, 'chiffre_7': 0.053,
+    'texte': 0.060, 'pont': 0.065, 'sapins_2': 0.072, 'sapin_1': 0.080, 'maisons': 0.085,
+}
+
+
+def sortie(ob, debut, repli, profondeur):
+    """Le calque sort de la carte vers nous (avec rebond), puis y rentre à la fin."""
+    z0 = ob.location.z
+    # 1) il avance vers le spectateur (position Z)
+    cle(ob, 'location', 2, 0, z0, 'CONSTANT')
+    cle(ob, 'location', 2, debut, z0, 'BACK', 'EASE_OUT', back=2.2)
+    cle(ob, 'location', 2, debut + 16, z0 + profondeur, 'CONSTANT')
+    cle(ob, 'location', 2, repli, z0 + profondeur, 'BACK', 'EASE_IN', back=1.4)
+    cle(ob, 'location', 2, repli + 10, z0, 'CONSTANT')
+    cle(ob, 'location', 2, FIN, z0, 'CONSTANT')
+    # 2) en sortant, son haut bascule vers nous puis revient en tremblant (rotation X) :
+    #    c'est ce mouvement qui montre le relief quand on regarde la carte de face
     cle(ob, 'rotation_euler', 0, 0, 0.0, 'CONSTANT')
-    cle(ob, 'rotation_euler', 0, debut, 0.0, 'BACK', 'EASE_OUT', back=1.9)
-    cle(ob, 'rotation_euler', 0, debut + duree, R(ANGLE), 'CONSTANT')
-    cle(ob, 'rotation_euler', 0, repli, R(ANGLE), 'BACK', 'EASE_IN', back=1.3)
+    cle(ob, 'rotation_euler', 0, debut, 0.0, 'QUAD', 'EASE_OUT')
+    cle(ob, 'rotation_euler', 0, debut + 6, R(30), 'ELASTIC', 'EASE_OUT')
+    cle(ob, 'rotation_euler', 0, debut + 32, 0.0, 'CONSTANT')
+    cle(ob, 'rotation_euler', 0, repli, 0.0, 'QUAD', 'EASE_OUT')
+    cle(ob, 'rotation_euler', 0, repli + 5, R(18), 'QUAD', 'EASE_IN')
     cle(ob, 'rotation_euler', 0, repli + 10, 0.0, 'CONSTANT')
     cle(ob, 'rotation_euler', 0, FIN, 0.0, 'CONSTANT')
 
 
 def balancement(ob, debut, fin, amplitude=3.0, periode=48, dephasage=0):
-    """Petit balancement (rotation Y) : sapins et feuilles dans le vent."""
+    """Petit balancement dans le plan de la carte (rotation Z autour du pied) : le vent."""
     f = debut; signe = 1
-    cle(ob, 'rotation_euler', 1, 0, 0.0, 'CONSTANT')
-    cle(ob, 'rotation_euler', 1, f, 0.0)
+    cle(ob, 'rotation_euler', 2, 0, 0.0, 'CONSTANT')
+    cle(ob, 'rotation_euler', 2, f, 0.0)
     f += periode // 4 + dephasage
     while f < fin - periode // 2:
-        cle(ob, 'rotation_euler', 1, f, math.radians(amplitude * signe))
+        cle(ob, 'rotation_euler', 2, f, R(amplitude * signe))
         signe = -signe; f += periode // 2
-    cle(ob, 'rotation_euler', 1, fin, 0.0, 'CONSTANT')
-    cle(ob, 'rotation_euler', 1, FIN, 0.0, 'CONSTANT')
+    cle(ob, 'rotation_euler', 2, fin, 0.0, 'CONSTANT')
+    cle(ob, 'rotation_euler', 2, FIN, 0.0, 'CONSTANT')
 
 
-# ================================================================== 5. LE POP-UP
-# nom : (image où il se lève, image où il se replie)  — de l'arrière vers l'avant
+# ================================================================== 5. LA CARTE QUI S'OUVRE
+# nom : (image où il sort, image où il rentre)
 CALENDRIER = {
     'vignes':     (12, 273),
     'chiffre_2a': (18, 271), 'chiffre_0': (23, 270), 'chiffre_2b': (28, 269), 'chiffre_7': (33, 268),
@@ -210,62 +229,65 @@ def construire_popup(racine, coll):
     for rang, nom in enumerate(CALENDRIER):
         x0, y0, x1, y1 = INFO[nom]['box']
         charniere = INFO[nom]['hinge']
-        # pivot = milieu du bas de l'élément ; petit décalage en hauteur pour éviter
-        # que deux calques à plat se chevauchent au même endroit (z-fighting)
+        # pivot = milieu du bas de l'élément ; petit décalage pour éviter que deux calques
+        # à plat se chevauchent exactement au même endroit (z-fighting)
         ob = plan_calque(nom, ((x0 + x1) / 2, charniere), coll, z=0.0004 + 0.0003 * rang, parent=racine)
         debut, repli = CALENDRIER[nom]
-        popup(ob, debut, repli)
+        sortie(ob, debut, repli, PROFONDEUR[nom])
         pieces[nom] = ob
-    # la vague des chiffres 2-0-2-7 (petits sauts)
-    for vague in (84, 196):
+    # la vague 2-0-2-7 : chaque chiffre saute vers le haut et fait un tour sur lui-même
+    for tour, vague in ((1, 84), (2, 196)):
         for i, nom in enumerate(('chiffre_2a', 'chiffre_0', 'chiffre_2b', 'chiffre_7')):
-            ob = pieces[nom]; z0 = ob.location.z; f = vague + 4 * i
-            if vague == 84: cle(ob, 'location', 2, 0, z0, 'CONSTANT')
-            cle(ob, 'location', 2, f, z0, 'QUAD', 'EASE_OUT')
-            cle(ob, 'location', 2, f + 6, z0 + 0.035, 'BOUNCE', 'EASE_OUT')
-            cle(ob, 'location', 2, f + 20, z0, 'CONSTANT')
-            if vague == 196: cle(ob, 'location', 2, FIN, z0, 'CONSTANT')
+            ob = pieces[nom]; y0 = ob.location.y; f = vague + 5 * i
+            if tour == 1:
+                cle(ob, 'location', 1, 0, y0, 'CONSTANT')
+                cle(ob, 'rotation_euler', 1, 0, 0.0, 'CONSTANT')
+            cle(ob, 'location', 1, f, y0, 'QUAD', 'EASE_OUT')
+            cle(ob, 'location', 1, f + 7, y0 + 0.03, 'BOUNCE', 'EASE_OUT')
+            cle(ob, 'location', 1, f + 22, y0, 'CONSTANT')
+            cle(ob, 'rotation_euler', 1, f, R(360 * (tour - 1)), 'CUBIC', 'EASE_IN_OUT')
+            cle(ob, 'rotation_euler', 1, f + 16, R(360 * tour), 'CONSTANT')
+            if tour == 2:
+                cle(ob, 'location', 1, FIN, y0, 'CONSTANT')
+                cle(ob, 'rotation_euler', 1, FIN, R(720), 'CONSTANT')
     # le vent dans les sapins et les feuilles de vigne
-    balancement(pieces['sapin_1'], 64, 258, amplitude=2.5, periode=46)
-    balancement(pieces['sapins_2'], 64, 258, amplitude=2.0, periode=54, dephasage=6)
-    balancement(pieces['feuilles'], 30, 270, amplitude=2.0, periode=60)
+    balancement(pieces['sapin_1'], 64, 258, amplitude=3.0, periode=46)
+    balancement(pieces['sapins_2'], 64, 258, amplitude=2.5, periode=54, dephasage=6)
+    balancement(pieces['feuilles'], 30, 270, amplitude=2.5, periode=60)
     return pieces
 
 
 # ================================================================== 6. LA CIGOGNE
 def construire_cigogne(racine, coll):
-    R = math.radians
     maison = (2098, 222)                               # pivot du corps (pixels du dessin)
     hx, hy = px(*maison)
     cig = vide("Cigogne", coll, (hx, hy, 0.002), parent=racine, taille=0.04, forme='SPHERE')
-    # ordre YXZ : d'abord le retournement (Y) pour changer de sens, puis l'inclinaison (X) vers le spectateur
-    cig.rotation_mode = 'YXZ'
     corps = plan_calque('cigogne_corps', maison, coll, z=0.0, parent=cig)
     aile_av = plan_calque('cigogne_aile_avant', (2100, 222), coll, z=0.0008, parent=cig)
     aile_ar = plan_calque('cigogne_aile_arriere', (2128, 232), coll, z=-0.0008, parent=cig)
 
-    # trajectoire : (image, x, y, z, sens en degrés) — 0 = bec vers la gauche, 180 = vers la droite
-    vol = [(74, hx - 0.02, hy, 0.13, 0), (92, 0.12, 0.06, 0.26, 0), (110, -0.08, 0.02, 0.32, 0),
-           (128, -0.28, 0.04, 0.30, 20), (142, -0.40, 0.12, 0.27, 90), (156, -0.32, 0.21, 0.30, 180),
-           (174, -0.05, 0.23, 0.36, 180), (192, 0.20, 0.21, 0.34, 190), (208, 0.38, 0.14, 0.28, 270),
-           (222, 0.40, 0.07, 0.21, 330), (236, hx + 0.01, hy, 0.12, 360)]
-    # au sol, à plat (comme sur la carte)
+    # trajectoire : (image, x, y, z, sens) — sens 0 = bec vers la gauche, 180 = demi-tour vers la droite
+    # z = distance devant la carte : la cigogne vient vers nous (elle grossit) puis repart.
+    vol = [(74, hx - 0.02, hy + 0.01, 0.14, 0), (92, 0.12, 0.22, 0.18, 0), (110, -0.10, 0.24, 0.20, 0),
+           (128, -0.30, 0.20, 0.22, 20), (142, -0.40, 0.08, 0.26, 90), (156, -0.28, -0.04, 0.32, 180),
+           (174, -0.02, -0.08, 0.36, 180), (192, 0.22, -0.04, 0.32, 190), (208, 0.38, 0.06, 0.26, 270),
+           (222, 0.36, 0.14, 0.18, 330), (236, hx + 0.01, hy + 0.01, 0.10, 360)]
+    # posée sur la carte
     for f in (0, 60):
         for i, v in enumerate((hx, hy, 0.002)): cle(cig, 'location', i, f, v)
-        cle(cig, 'rotation_euler', 0, f, 0.0); cle(cig, 'rotation_euler', 1, f, 0.0)
+        cle(cig, 'rotation_euler', 1, f, 0.0)
         for i in range(3): cle(cig, 'scale', i, f, 1.0)
-    # envol puis tour de la scène
-    for (f, x, y, z, cap) in vol:
+    # envol puis tour de la scène (le demi-tour = rotation Y : elle se retourne)
+    for (f, x, y, z, sens) in vol:
         for i, v in enumerate((x, y, z)): cle(cig, 'location', i, f, v)
-        cle(cig, 'rotation_euler', 0, f, R(ANGLE))
-        cle(cig, 'rotation_euler', 1, f, R(cap))
+        cle(cig, 'rotation_euler', 1, f, R(sens))
         for i in range(3): cle(cig, 'scale', i, f, 2.2)
     # elle se repose à sa place
     for f in (252, FIN):
         for i, v in enumerate((hx, hy, 0.002)): cle(cig, 'location', i, f, v)
-        cle(cig, 'rotation_euler', 0, f, 0.0); cle(cig, 'rotation_euler', 1, f, R(360))
+        cle(cig, 'rotation_euler', 1, f, R(360))
         for i in range(3): cle(cig, 'scale', i, f, 1.0)
-    # battements d'ailes (autour de l'axe du corps)
+    # battements d'ailes (autour de l'axe du corps : elles sortent du plan de la carte)
     for aile, signe in ((aile_av, 1), (aile_ar, -1)):
         cle(aile, 'rotation_euler', 0, 0, 0.0, 'CONSTANT')
         cle(aile, 'rotation_euler', 0, 60, 0.0)
@@ -286,6 +308,7 @@ def construire_cigogne(racine, coll):
 # L'animation ne fait que changer le poids des clés de forme -> fichier léger.
 ETINCELLE_V = [(0, 0, 0.011), (0, 0, -0.0045), (0.0022, 0, 0), (-0.0022, 0, 0), (0, 0.0022, 0), (0, -0.0022, 0)]
 ETINCELLE_F = [(0, 2, 4), (0, 4, 3), (0, 3, 5), (0, 5, 2), (1, 4, 2), (1, 3, 4), (1, 5, 3), (1, 2, 5)]
+BAS_DE_LA_CARTE = -(H_PX / 2) * K - 0.01
 
 
 def directions(n):
@@ -320,7 +343,7 @@ def gerbe(nom, coll, parent, rayon, mat_couleur, mat_blanc, n=26):
             vv = q @ Vector(v)
             base.append(vv * 0.001)                                   # minuscule, au centre
             explosion.append(d * rayon + vv)
-            fin.append(d * rayon * 1.25 + Vector((0, 0, -0.035)) + vv * 0.001)
+            fin.append(d * rayon * 1.25 + Vector((0, -0.035, 0)) + vv * 0.001)   # retombe vers le bas
         for f in ETINCELLE_F:
             faces.append(tuple(k0 + i for i in f)); mats.append(1 if j % 3 == 0 else 0)
     me = bpy.data.meshes.new(nom)
@@ -335,14 +358,14 @@ def gerbe(nom, coll, parent, rayon, mat_couleur, mat_blanc, n=26):
     return ob
 
 
-FEUX = [  # (image de l'explosion, position x y z, couleur, rayon)
-    (100, (-0.20, 0.08, 0.27), '#FFD24A', 0.070),
-    (116, (0.13, 0.12, 0.31), '#FF4D5E', 0.075),
-    (132, (0.31, 0.06, 0.26), '#4DA8FF', 0.065),
-    (150, (-0.04, 0.10, 0.34), '#5BE37D', 0.080),
-    (170, (-0.31, 0.14, 0.30), '#FF6FD8', 0.070),
-    (190, (0.20, 0.09, 0.30), '#FFD24A', 0.080),
-    (212, (0.00, 0.06, 0.29), '#FFFFFF', 0.095),
+FEUX = [  # (image de l'explosion, position x y z, couleur, rayon) — au-dessus et devant le 2027
+    (100, (-0.22, 0.20, 0.12), '#FFD24A', 0.070),
+    (116, (0.12, 0.26, 0.16), '#FF4D5E', 0.075),
+    (132, (0.32, 0.18, 0.12), '#4DA8FF', 0.065),
+    (150, (-0.04, 0.22, 0.20), '#5BE37D', 0.080),
+    (170, (-0.33, 0.12, 0.16), '#FF6FD8', 0.070),
+    (190, (0.22, 0.14, 0.18), '#FFD24A', 0.080),
+    (212, (0.00, 0.16, 0.22), '#FFFFFF', 0.095),
 ]
 
 def construire_feux(racine, coll):
@@ -352,14 +375,15 @@ def construire_feux(racine, coll):
     groupe = vide("Feux_artifice", coll, (0, 0, 0), parent=racine)
     for n, (tb, pos, couleur, rayon) in enumerate(FEUX, start=1):
         feu = vide(f"Feu_{n}", coll, pos, parent=groupe, taille=0.02)
-        # 1) la fusée monte depuis la carte
+        # 1) la fusée monte depuis le bas de la carte
         fusee = bpy.data.objects.new(f"Fusee_{n}", me_fusee); coll.objects.link(fusee)
         fusee.parent = feu
+        fusee.rotation_euler = (R(-90), 0, 0)              # pointe vers le haut de la carte
         for i in range(3): cle(fusee, 'scale', i, 0, 0.0, 'CONSTANT')
         for i in range(3): cle(fusee, 'scale', i, tb - 14, 0.8, 'CONSTANT')
         for i in range(3): cle(fusee, 'scale', i, tb, 0.0, 'CONSTANT')
-        cle(fusee, 'location', 2, tb - 14, -(pos[2] - 0.02), 'QUAD', 'EASE_OUT')
-        cle(fusee, 'location', 2, tb, 0.0, 'CONSTANT')
+        cle(fusee, 'location', 1, tb - 14, BAS_DE_LA_CARTE - pos[1], 'QUAD', 'EASE_OUT')
+        cle(fusee, 'location', 1, tb, 0.0, 'CONSTANT')
         # 2) la gerbe explose puis s'éteint (clés de forme)
         g = gerbe(f"Gerbe_{n}", coll, feu, rayon, materiau_couleur(f"M_feu_{n}", hexrgb(couleur)), blanc)
         cle_forme(g, "Explosion", 0, 0.0, 'CONSTANT')
@@ -380,14 +404,14 @@ def maillage_etoile():
     v = [(0, 0, 0)]
     for i in range(8):
         a = i * math.pi / 4; r = 0.016 if i % 2 == 0 else 0.004
-        v.append((r * math.sin(a), r * math.cos(a), 0))      # à plat, puis penchée par la rotation de l'objet
+        v.append((r * math.sin(a), r * math.cos(a), 0))      # face à la personne qui regarde
     f = [(0, 1 + i, 1 + (i + 1) % 8) for i in range(8)]
     me.from_pydata(v, [], f)
     return me
 
 
-ETOILES = [(-0.36, 0.06, 0.20, 70), (-0.22, 0.03, 0.22, 98), (0.02, 0.02, 0.21, 82), (0.27, 0.03, 0.20, 106),
-           (0.40, 0.08, 0.18, 90), (-0.10, 0.10, 0.25, 120), (0.15, 0.08, 0.24, 140), (0.33, 0.12, 0.23, 76)]
+ETOILES = [(-0.36, 0.14, 0.08, 70), (-0.22, 0.24, 0.10, 98), (0.02, 0.23, 0.12, 82), (0.27, 0.24, 0.09, 106),
+           (0.40, 0.16, 0.07, 90), (-0.10, 0.12, 0.14, 120), (0.15, 0.12, 0.13, 140), (0.33, 0.06, 0.11, 76)]
 
 def construire_etoiles(racine, coll):
     me = maillage_etoile()
@@ -396,8 +420,6 @@ def construire_etoiles(racine, coll):
     for n, (x, y, z, f0) in enumerate(ETOILES, start=1):
         e = bpy.data.objects.new(f"Etoile_{n}", me); coll.objects.link(e)
         e.parent = groupe; e.location = (x, y, z)
-        e.rotation_mode = 'ZYX'                              # tourne sur elle-même (Z), penchée à 45° (X)
-        e.rotation_euler = (math.radians(ANGLE), 0, 0)
         for i in range(3): cle(e, 'scale', i, 0, 0.0, 'CONSTANT')
         f = f0
         while f + 16 < 250:
@@ -405,15 +427,15 @@ def construire_etoiles(racine, coll):
             for i in range(3): cle(e, 'scale', i, f + 6, 1.0, 'QUAD', 'EASE_IN')
             for i in range(3): cle(e, 'scale', i, f + 16, 0.0, 'CONSTANT')
             f += 52
-        cle(e, 'rotation_euler', 2, 0, 0.0, 'LINEAR')
-        cle(e, 'rotation_euler', 2, FIN, math.radians(360), 'LINEAR')
+        cle(e, 'rotation_euler', 2, 0, 0.0, 'LINEAR')                 # elle tourne sur elle-même
+        cle(e, 'rotation_euler', 2, FIN, R(360), 'LINEAR')
         for i in range(3): cle(e, 'scale', i, FIN, 0.0, 'CONSTANT')
     return groupe
 
 
 # ================================================================== 8 bis. NEIGE (version sans feux d'artifice)
-# Les flocons tombent en continu. Chaque flocon descend, disparaît en touchant la carte
-# et réapparaît en haut. Leur période (4 s ou 6 s) divise les 12 s : la boucle est parfaite.
+# Les flocons tombent du haut vers le bas de la carte, à différentes distances devant elle.
+# Leur période (4 s ou 6 s) divise les 12 s : la boucle est parfaite.
 def maillage_flocon(nom, couleur):
     import bmesh
     me = bpy.data.meshes.new(nom)
@@ -430,18 +452,18 @@ def construire_neige(racine, coll, n=48):
     me_blanc = maillage_flocon("flocon_blanc", '#FFFFFF')
     me_bleute = maillage_flocon("flocon_bleute", '#CFE3FF')   # bleuté : se voit aussi sur le papier blanc
     groupe = vide("Neige", coll, (0, 0, 0), parent=racine)
-    HAUT, BAS = 0.46, 0.01
+    HAUT, BAS = 0.33, -0.30                          # du haut de la carte jusqu'en bas
     for k in range(n):
         f = bpy.data.objects.new(f"Flocon_{k + 1:02d}", me_blanc if k % 2 else me_bleute)
         coll.objects.link(f); f.parent = groupe
-        x0, y0 = alea.uniform(-0.48, 0.48), alea.uniform(-0.22, 0.22)
+        x0, z0 = alea.uniform(-0.48, 0.48), alea.uniform(0.02, 0.30)
         r = alea.uniform(0.0045, 0.0075)             # rayon du flocon
         P = 144 if k % 3 else 96                     # durée d'une chute : 6 s ou 4 s
         s = alea.randrange(P) - P                    # décalage : les flocons ne tombent pas ensemble
-        f.location = (x0, y0, HAUT)
+        f.location = (x0, HAUT, z0)
         while s < FIN + P:
-            cle(f, 'location', 2, s, HAUT, 'LINEAR')
-            cle(f, 'location', 2, s + P - 1, BAS, 'CONSTANT')
+            cle(f, 'location', 1, s, HAUT, 'LINEAR')
+            cle(f, 'location', 1, s + P - 1, BAS, 'CONSTANT')
             for i in range(3):
                 cle(f, 'scale', i, s, 0.0, 'QUAD', 'EASE_OUT')
                 cle(f, 'scale', i, s + 12, r, 'CONSTANT')
@@ -475,8 +497,8 @@ def carte_reference(coll):
 def camera_apercu(coll):
     cam = bpy.data.objects.new("Camera_telephone", bpy.data.cameras.new("Camera_telephone"))
     coll.objects.link(cam)
-    cam.location = (0.0, -0.78, 0.50)
-    direction = Vector((0.0, 0.04, 0.13)) - cam.location
+    cam.location = (0.0, -0.30, 1.05)               # face à la carte, un peu en dessous : comme le téléphone
+    direction = Vector((0.0, 0.0, 0.06)) - cam.location
     cam.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler()
     cam.data.lens = 30
     cam.hide_render = False
