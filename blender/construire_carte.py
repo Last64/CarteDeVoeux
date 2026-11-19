@@ -12,9 +12,11 @@ Repères à retenir pour l'oral :
 - Les éléments ne se lèvent pas : ils SORTENT de la carte vers nous, chacun à sa profondeur
   (comme les décors d'un théâtre). Plus un élément est devant dans le dessin, plus il avance.
 - Les matériaux sont "sans ombre" (unlit) et découpés par l'alpha du PNG.
+- La rivière est un calque à part, à bords doux (transparence BLEND), qui reste près de la carte :
+  la barque et les reflets sont ses enfants, ils glissent sur l'eau.
 - L'animation dure 12 s (288 images à 24 i/s) et boucle : tout rentre dans la carte à la fin.
-- Deux versions : "Feux d'artifice" (assets/carte.glb) ou "Neige" (assets/carte-sans-feux.glb).
-  On passe de l'une à l'autre avec l'appareil photo des 2 collections dans l'Outliner.
+- La neige tombe pendant toute l'animation.
+- Export : assets/carte.glb (Fichier > Exporter > glTF 2.0, ou la fonction exporter_glb() en bas du script).
 """
 import bpy, json, math, os
 from mathutils import Vector, Matrix
@@ -56,8 +58,9 @@ def collection(nom, parent=None):
 
 
 # ================================================================== 2. MATÉRIAUX
-def materiau_calque(nom, chemin_image):
-    """Matériau sans ombre (KHR_materials_unlit) + découpe nette par l'alpha (alphaMode MASK)."""
+def materiau_calque(nom, chemin_image, fondu=False):
+    """Matériau sans ombre (KHR_materials_unlit) + découpe par l'alpha du PNG.
+    fondu=False : découpe nette (alphaMode MASK).  fondu=True : bords doux (alphaMode BLEND), pour l'eau."""
     mat = bpy.data.materials.new(nom)
     mat.use_nodes = True
     nt = mat.node_tree; nt.nodes.clear(); N = nt.nodes.new; Lk = nt.links.new
@@ -73,8 +76,14 @@ def materiau_calque(nom, chemin_image):
     image.interpolation = 'Linear'; image.extension = 'CLIP'
     arrondi = N('ShaderNodeMath'); arrondi.operation = 'ROUND'; arrondi.location = (-100, 180); arrondi.label = "Alpha 0 ou 1"
     Lk(image.outputs['Color'], emission.inputs['Color'])
-    Lk(image.outputs['Alpha'], arrondi.inputs[0])
-    Lk(arrondi.outputs[0], decoupe.inputs[0])
+    if fondu:                                # l'alpha va directement au mélange : transparence douce
+        nt.nodes.remove(arrondi)
+        Lk(image.outputs['Alpha'], decoupe.inputs[0])
+        try: mat.surface_render_method = 'BLENDED'
+        except AttributeError: pass
+    else:
+        Lk(image.outputs['Alpha'], arrondi.inputs[0])
+        Lk(arrondi.outputs[0], decoupe.inputs[0])
     Lk(transp.outputs[0], decoupe.inputs[1])
     Lk(chemin.outputs['Is Camera Ray'], sans_ombre.inputs[0])
     Lk(transp2.outputs[0], sans_ombre.inputs[1])
@@ -86,7 +95,7 @@ def materiau_calque(nom, chemin_image):
 
 
 def materiau_couleur(nom, rgb):
-    """Couleur unie sans ombre (feux d'artifice, étoiles)."""
+    """Couleur unie sans ombre (drapeau, étoiles, flocons, fumée)."""
     mat = bpy.data.materials.new(nom)
     mat.use_nodes = True
     nt = mat.node_tree; nt.nodes.clear(); N = nt.nodes.new; Lk = nt.links.new
@@ -113,7 +122,7 @@ def hexrgb(h):
 
 
 # ================================================================== 3. PLANS DES CALQUES
-def plan_calque(nom, pivot_px, coll, z=0.0, parent=None):
+def plan_calque(nom, pivot_px, coll, z=0.0, parent=None, fondu=False):
     """Plan à la taille exacte du calque PNG, origine sur le pivot (charnière)."""
     x0, y0, x1, y1 = INFO[nom]['box']
     pxv, pyv = pivot_px
@@ -123,7 +132,7 @@ def plan_calque(nom, pivot_px, coll, z=0.0, parent=None):
     uv = me.uv_layers.new(name="UVMap")
     for i, c in enumerate([(0, 0), (1, 0), (1, 1), (0, 1)]):
         uv.data[i].uv = c
-    me.materials.append(materiau_calque("M_" + nom, os.path.join(CALQUES, nom + ".png")))
+    me.materials.append(materiau_calque("M_" + nom, os.path.join(CALQUES, nom + ".png"), fondu))
     ob = bpy.data.objects.new(nom, me)
     coll.objects.link(ob)
     wx, wy = px(pxv, pyv)
@@ -164,18 +173,32 @@ def cle(ob, chemin, index, frame, valeur, interp='BEZIER', easing='AUTO', back=N
     return fc
 
 
+def cle_forme(ob, nom_cle, frame, valeur, interp='BEZIER', easing='AUTO'):
+    """Image clé sur le poids d'une clé de forme."""
+    kb = ob.data.shape_keys.key_blocks[nom_cle]
+    kb.value = valeur
+    kb.keyframe_insert('value', frame=frame)
+    key = ob.data.shape_keys
+    sac = anim_utils.action_get_channelbag_for_slot(key.animation_data.action, key.animation_data.action_slot)
+    fc = sac.fcurves.find(f'key_blocks["{nom_cle}"].value')
+    for k in fc.keyframe_points:
+        if abs(k.co.x - frame) < 1e-3:
+            k.interpolation = interp; k.easing = easing
+
+
 R = math.radians
 
 # Profondeur de chaque élément quand il est sorti (en largeur de carte : 0,1 = 2 cm).
 # De l'arrière du paysage vers l'avant : plus c'est devant dans le dessin, plus ça avance.
 PROFONDEUR = {
+    'riviere': 0.010,                                  # l'eau reste près de la carte : c'est le sol
     'vignes': 0.022, 'feuilles': 0.035, 'chateau': 0.040,
     'chiffre_2a': 0.050, 'chiffre_0': 0.053, 'chiffre_2b': 0.050, 'chiffre_7': 0.053,
     'texte': 0.060, 'pont': 0.065, 'sapins_2': 0.072, 'sapin_1': 0.080, 'maisons': 0.085,
 }
 
 
-def sortie(ob, debut, repli, profondeur, duree=20):
+def sortie(ob, debut, repli, profondeur, duree=20, bascule=30):
     """Le calque sort de la carte vers nous (avec rebond), puis y rentre à la fin."""
     z0 = ob.location.z
     # 1) il avance vers le spectateur (position Z)
@@ -187,73 +210,84 @@ def sortie(ob, debut, repli, profondeur, duree=20):
     cle(ob, 'location', 2, FIN, z0, 'CONSTANT')
     # 2) en sortant, son haut bascule vers nous puis revient en tremblant (rotation X) :
     #    c'est ce mouvement qui montre le relief quand on regarde la carte de face
+    if not bascule: return z0 + profondeur
     cle(ob, 'rotation_euler', 0, 0, 0.0, 'CONSTANT')
     cle(ob, 'rotation_euler', 0, debut, 0.0, 'QUAD', 'EASE_OUT')
-    cle(ob, 'rotation_euler', 0, debut + 6, R(30), 'ELASTIC', 'EASE_OUT')
+    cle(ob, 'rotation_euler', 0, debut + 6, R(bascule), 'ELASTIC', 'EASE_OUT')
     cle(ob, 'rotation_euler', 0, debut + 32, 0.0, 'CONSTANT')
     cle(ob, 'rotation_euler', 0, repli, 0.0, 'QUAD', 'EASE_OUT')
-    cle(ob, 'rotation_euler', 0, repli + 5, R(18), 'QUAD', 'EASE_IN')
+    cle(ob, 'rotation_euler', 0, repli + 5, R(bascule * 0.6), 'QUAD', 'EASE_IN')
     cle(ob, 'rotation_euler', 0, repli + 10, 0.0, 'CONSTANT')
     cle(ob, 'rotation_euler', 0, FIN, 0.0, 'CONSTANT')
     return z0 + profondeur
 
 
-# Une fois sorti, chaque élément "respire" : il avance et recule un peu (Z), monte et descend (Y)
-# et pivote légèrement sur lui-même (rotation Y). Comme le relief change tout le temps,
-# on voit la profondeur même sans bouger le téléphone.
-#          amplitude Z, amplitude Y, pivot (°), période (images), décalage
-FLOTTE = {
-    'vignes':     (0.008, 0.003, 5, 96, 0),
-    'feuilles':   (0.009, 0.000, 0, 84, 10),
-    'chateau':    (0.008, 0.003, 5, 108, 20),
-    'chiffre_2a': (0.010, 0.000, 0, 72, 0), 'chiffre_0': (0.010, 0.000, 0, 72, 9),
-    'chiffre_2b': (0.010, 0.000, 0, 72, 18), 'chiffre_7': (0.010, 0.000, 0, 72, 27),
-    'pont':       (0.009, 0.003, 6, 120, 30),
-    'sapins_2':   (0.010, 0.000, 0, 90, 5),
-    'sapin_1':    (0.010, 0.000, 0, 78, 15),
-    'maisons':    (0.010, 0.004, 6, 100, 40),
-    'texte':      (0.012, 0.004, 6, 88, 12),
+# ================================================================== 4 bis. LA VIE : LE MOUVEMENT CONTINU
+# Une fois sortis, les éléments ne s'arrêtent plus. Chaque mouvement est un MODIFICATEUR de courbe
+# "Built-in Function" (sinus), dans le Graph Editor (panneau N > onglet Modifiers) :
+#   - Additive : le sinus s'ajoute aux images clés de la courbe (la sortie, les sauts...) ;
+#   - Restrict Frame Range + Blend In / Blend Out : il n'agit que pendant que l'élément est sorti,
+#     avec un fondu. Aux images 0 et 288 tout est à plat : la boucle ne se voit pas.
+# Ce sont surtout des mouvements DANS le plan de la carte (monter, pencher, s'étirer) :
+# ce sont eux qu'on voit le mieux quand on regarde la carte de face.
+def sinus(ob, chemin, index, amplitude, periode, decalage, debut, fin, fondu=16):
+    fc = fcourbe(ob, chemin, index)
+    if fc is None:                                   # canal sans image clé : on fige sa valeur
+        v = getattr(ob, chemin)[index]
+        cle(ob, chemin, index, 0, v, 'CONSTANT')
+        fc = cle(ob, chemin, index, FIN, v, 'CONSTANT')
+    m = fc.modifiers.new('FNGENERATOR')
+    m.function_type, m.use_additive = 'SIN', True
+    m.amplitude = amplitude
+    m.phase_multiplier = 2 * math.pi / periode       # une oscillation complète toutes les "periode" images
+    m.phase_offset = -2 * math.pi * decalage / periode
+    m.use_restricted_range = True
+    m.frame_start, m.frame_end = debut, fin
+    m.blend_in = m.blend_out = fondu
+    return m
+
+
+#   nom : [(propriété, axe, amplitude, période en images, décalage en images), ...]
+#   location 1 = monter / descendre        rotation_euler 2 = pencher à gauche / à droite
+#   scale 0 / 1 = s'élargir / s'étirer vers le haut (l'origine est en bas de chaque élément)
+#   48 images = 2 s : le même tempo pour les chiffres, les maisons et le texte.
+VIE = {
+    # 2027 : une vague passe de chiffre en chiffre (6 images de décalage) et ils se penchent en montant
+    'chiffre_2a': [('location', 1, 0.016, 48, 0),  ('rotation_euler', 2, R(5), 48, 12)],
+    'chiffre_0':  [('location', 1, 0.016, 48, 6),  ('rotation_euler', 2, R(5), 48, 18)],
+    'chiffre_2b': [('location', 1, 0.016, 48, 12), ('rotation_euler', 2, R(5), 48, 24)],
+    'chiffre_7':  [('location', 1, 0.016, 48, 18), ('rotation_euler', 2, R(5), 48, 30)],
+    # les maisons respirent comme dans un dessin animé : plus hautes et plus fines, puis l'inverse
+    'maisons':    [('scale', 1, 0.05, 48, 0), ('scale', 0, 0.03, 48, 24)],
+    # « Meilleurs vœux » bat comme un cœur
+    'texte':      [('scale', 0, 0.045, 48, 24), ('scale', 1, 0.045, 48, 24)],
+    # le vent : les sapins et les feuilles se balancent autour de leur pied
+    'sapin_1':    [('rotation_euler', 2, R(6), 72, 0)],
+    'sapins_2':   [('rotation_euler', 2, R(5), 84, 20)],
+    'feuilles':   [('rotation_euler', 2, R(5), 96, 0)],
+    # le fond flotte plus lentement
+    'vignes':     [('location', 1, 0.006, 96, 72), ('rotation_euler', 2, R(1.5), 96, 0)],
+    'chateau':    [('location', 1, 0.006, 96, 0),  ('rotation_euler', 2, R(1.2), 96, 24)],
+    'pont':       [('location', 1, 0.005, 96, 48)],
+    # l'eau ne bouge pas : ce sont les reflets qui glissent dessus (voir construire_reflets)
+    'riviere':    [],
 }
-
-def oscille(ob, chemin, index, t1, t2, centre, amplitude, periode, decalage):
-    """Va-et-vient doux autour de "centre" entre les images t1 et t2."""
-    cle(ob, chemin, index, t1, centre)
-    f, signe = t1 + periode // 4 + decalage, 1
-    while f < t2 - periode // 4:
-        cle(ob, chemin, index, f, centre + signe * amplitude)
-        signe = -signe; f += periode // 2
-    cle(ob, chemin, index, t2, centre, 'CONSTANT')
+RESPIRATION = 0.2    # le relief respire : chaque élément avance et recule de 20 % de sa profondeur
 
 
-def flotter(ob, debut, repli, z_sorti, nom):
-    amp_z, amp_y, pivot, periode, decalage = FLOTTE[nom]
-    t1, t2 = debut + 34, repli - 2
-    oscille(ob, 'location', 2, t1, t2, z_sorti, amp_z, periode, decalage)
-    if amp_y:
-        y0 = ob.location.y
-        cle(ob, 'location', 1, 0, y0, 'CONSTANT'); cle(ob, 'location', 1, FIN, y0, 'CONSTANT')
-        oscille(ob, 'location', 1, t1, t2, y0, amp_y, int(periode * 0.75), decalage + 7)
-    if pivot:
-        cle(ob, 'rotation_euler', 1, 0, 0.0, 'CONSTANT'); cle(ob, 'rotation_euler', 1, FIN, 0.0, 'CONSTANT')
-        oscille(ob, 'rotation_euler', 1, t1, t2, 0.0, R(pivot), int(periode * 1.25), decalage + 3)
-
-
-def balancement(ob, debut, fin, amplitude=3.0, periode=48, dephasage=0):
-    """Petit balancement dans le plan de la carte (rotation Z autour du pied) : le vent."""
-    f = debut; signe = 1
-    cle(ob, 'rotation_euler', 2, 0, 0.0, 'CONSTANT')
-    cle(ob, 'rotation_euler', 2, f, 0.0)
-    f += periode // 4 + dephasage
-    while f < fin - periode // 2:
-        cle(ob, 'rotation_euler', 2, f, R(amplitude * signe))
-        signe = -signe; f += periode // 2
-    cle(ob, 'rotation_euler', 2, fin, 0.0, 'CONSTANT')
-    cle(ob, 'rotation_euler', 2, FIN, 0.0, 'CONSTANT')
+def vivre(ob, nom, debut, repli):
+    """Après sa sortie, l'élément bouge sans arrêt, jusqu'à ce qu'il rentre dans la carte."""
+    for chemin, index, amplitude, periode, decalage in VIE[nom]:
+        sinus(ob, chemin, index, amplitude, periode, decalage, debut + 30, repli - 2)
+    # la respiration : tous en même temps et proportionnelle à la profondeur,
+    # donc deux éléments ne passent jamais l'un devant l'autre
+    sinus(ob, 'location', 2, RESPIRATION * PROFONDEUR[nom], 96, 0, 84, 252, fondu=24)
 
 
 # ================================================================== 5. LA CARTE QUI S'OUVRE
 # nom : (image où il sort, image où il rentre)
 CALENDRIER = {
+    'riviere':    (4, 276),                            # en premier : tout le reste est devant elle
     'vignes':     (12, 273),
     'chiffre_2a': (18, 271), 'chiffre_0': (23, 270), 'chiffre_2b': (28, 269), 'chiffre_7': (33, 268),
     'feuilles':   (8, 275),
@@ -272,10 +306,11 @@ def construire_popup(racine, coll):
         charniere = INFO[nom]['hinge']
         # pivot = milieu du bas de l'élément ; petit décalage pour éviter que deux calques
         # à plat se chevauchent exactement au même endroit (z-fighting)
-        ob = plan_calque(nom, ((x0 + x1) / 2, charniere), coll, z=0.0004 + 0.0003 * rang, parent=racine)
+        ob = plan_calque(nom, ((x0 + x1) / 2, charniere), coll, z=0.0004 + 0.0003 * rang, parent=racine,
+                         fondu=(nom == 'riviere'))
         debut, repli = CALENDRIER[nom]
-        z_sorti = sortie(ob, debut, repli, PROFONDEUR[nom])
-        flotter(ob, debut, repli, z_sorti, nom)
+        sortie(ob, debut, repli, PROFONDEUR[nom], bascule=0 if nom == 'riviere' else 30)
+        vivre(ob, nom, debut, repli)
         pieces[nom] = ob
     # la vague 2-0-2-7 : chaque chiffre saute vers le haut et fait un tour sur lui-même
     for tour, vague in ((1, 84), (2, 196)):
@@ -292,17 +327,13 @@ def construire_popup(racine, coll):
             if tour == 2:
                 cle(ob, 'location', 1, FIN, y0, 'CONSTANT')
                 cle(ob, 'rotation_euler', 1, FIN, R(720), 'CONSTANT')
-    # le vent dans les sapins et les feuilles de vigne
-    balancement(pieces['sapin_1'], 64, 258, amplitude=3.0, periode=46)
-    balancement(pieces['sapins_2'], 64, 258, amplitude=2.5, periode=54, dephasage=6)
-    balancement(pieces['feuilles'], 30, 270, amplitude=2.5, periode=60)
     return pieces
 
 
 # ================================================================== 5 bis. LES PETITS DÉTAILS QUI VIVENT
 def construire_fumee(maisons, coll, n=5):
     """Fumée de la cheminée : des petites boules qui montent, grossissent puis disparaissent."""
-    me = maillage_flocon("fumee", '#E4E9EE')
+    me = maillage_boule("fumee", '#C9D1DB')           # gris clair : se voit aussi sur le papier blanc
     cx, cy = (652 - 482.5) * K, (1000 - 522) * K      # haut de la cheminée, dans le repère du calque des maisons
     P = 60                                              # une bouffée dure 2,5 s
     for k in range(n):
@@ -314,8 +345,8 @@ def construire_fumee(maisons, coll, n=5):
             cle(b, 'location', 2, s, 0.003, 'CONSTANT')
             cle(b, 'location', 0, s + P - 1, cx + 0.03, 'CONSTANT'); cle(b, 'location', 1, s + P - 1, cy + 0.07, 'CONSTANT')
             for i in range(3):
-                cle(b, 'scale', i, s, 0.003, 'QUAD', 'EASE_OUT')
-                cle(b, 'scale', i, s + P // 2, 0.011, 'QUAD', 'EASE_IN')
+                cle(b, 'scale', i, s, 0.004, 'QUAD', 'EASE_OUT')
+                cle(b, 'scale', i, s + P // 2, 0.014, 'QUAD', 'EASE_IN')
                 cle(b, 'scale', i, s + P - 1, 0.0, 'CONSTANT')
             s += P
         for i in range(3): cle(b, 'scale', i, FIN, 0.0, 'CONSTANT')
@@ -365,30 +396,80 @@ RIVIERE = [  # (image, x, y en pixels du dessin, taille)
     (70, 1185, 515, 0.45), (95, 1150, 575, 0.52), (120, 1180, 630, 0.58), (145, 1265, 672, 0.65),
     (165, 1320, 735, 0.72), (185, 1300, 805, 0.80), (205, 1265, 880, 0.88), (225, 1215, 945, 0.95), (242, 1185, 995, 1.0)]
 
-def construire_bateau(racine, coll):
+def sur_l_eau(riviere, xp, yp):
+    """Pixel du dessin -> coordonnées dans le repère du calque de la rivière (la barque et les reflets
+    sont ses enfants : ils restent posés sur l'eau quand elle sort de la carte)."""
+    x, y = px(xp, yp)
+    return x - riviere.location.x, y - riviere.location.y
+
+
+def construire_bateau(riviere, coll):
     W, Hb = 220, 130                                   # taille du calque bateau.png en pixels
     me = bpy.data.meshes.new("bateau_plan")
     me.from_pydata([(-W / 2 * K, 0, 0), (W / 2 * K, 0, 0), (W / 2 * K, Hb * K, 0), (-W / 2 * K, Hb * K, 0)], [], [(0, 1, 2, 3)])
     uv = me.uv_layers.new(name="UVMap")
     for i, c in enumerate([(0, 0), (1, 0), (1, 1), (0, 1)]): uv.data[i].uv = c
     me.materials.append(materiau_calque("M_bateau", os.path.join(CALQUES, "bateau.png")))
-    ob = bpy.data.objects.new("Bateau", me); coll.objects.link(ob); ob.parent = racine
-    x0, y0 = px(*RIVIERE[0][1:3]); ob.location = (x0, y0, 0.022)
+    ob = bpy.data.objects.new("Bateau", me); coll.objects.link(ob); ob.parent = riviere
+    x0, y0 = sur_l_eau(riviere, *RIVIERE[0][1:3]); ob.location = (x0, y0, 0.003)
     for i in range(3): cle(ob, 'scale', i, 0, 0.0, 'CONSTANT')
     for i in range(3): cle(ob, 'scale', i, 62, 0.0, 'QUAD', 'EASE_OUT')
     for (f, xp, yp, taille) in RIVIERE:
-        x, y = px(xp, yp)
+        x, y = sur_l_eau(riviere, xp, yp)
         cle(ob, 'location', 0, f, x); cle(ob, 'location', 1, f, y)
         for i in range(3): cle(ob, 'scale', i, f, taille)
     for i in range(3): cle(ob, 'scale', i, 250, 0.0, 'CONSTANT')
     for i in range(3): cle(ob, 'scale', i, FIN, 0.0, 'CONSTANT')
-    cle(ob, 'location', 2, 0, 0.022, 'CONSTANT')
+    cle(ob, 'location', 2, 0, 0.003, 'CONSTANT')
     # proue vers la droite au début, puis demi-tour caché sous le pont (rotation Y)
     cle(ob, 'rotation_euler', 1, 0, 0.0, 'CONSTANT')
     cle(ob, 'rotation_euler', 1, 158, 0.0)
     cle(ob, 'rotation_euler', 1, 182, R(180), 'CONSTANT')
     cle(ob, 'rotation_euler', 1, FIN, R(180), 'CONSTANT')
     return ob
+
+
+# Des reflets glissent sur l'eau, de la source jusqu'en bas : c'est ce qui montre que la rivière coule.
+# 3 « voies » (à gauche, au milieu, à droite du lit), 3 reflets par voie, décalés dans le temps.
+VOIES = [  # points (x, y) en pixels du dessin, de la source vers le bas
+    [(1185, 478), (1192, 520), (1120, 565), (1136, 610), (1228, 650), (1239, 700), (1295, 750), (1284, 800), (1304, 850), (1256, 900), (1162, 945), (1119, 985), (1112, 1008)],
+    [(1210, 478), (1216, 520), (1150, 565), (1182, 610), (1290, 650), (1300, 700), (1393, 750), (1366, 800), (1394, 850), (1357, 900), (1270, 945), (1228, 985), (1224, 1008)],
+    [(1236, 478), (1239, 520), (1180, 565), (1227, 610), (1352, 650), (1360, 700), (1491, 750), (1447, 800), (1484, 850), (1458, 900), (1378, 945), (1337, 985), (1335, 1008)]]
+
+def maillage_reflet():
+    """Petite ellipse blanche, à plat face à la personne qui regarde (largeur 2, hauteur 0,6)."""
+    me = bpy.data.meshes.new("reflet")
+    v = [(0, 0, 0)] + [(math.cos(a), 0.3 * math.sin(a), 0) for a in (i * math.pi / 8 for i in range(16))]
+    me.from_pydata(v, [], [(0, 1 + i, 1 + (i + 1) % 16) for i in range(16)])
+    me.materials.append(materiau_couleur("M_reflet", hexrgb('#FFFFFF')))
+    return me
+
+
+def construire_reflets(riviere, coll):
+    me = maillage_reflet()
+    P = 96                                              # 4 s pour descendre la rivière (divise les 12 s)
+    n = 0
+    for v, voie in enumerate(VOIES):
+        for phase in (0, 32, 64):
+            n += 1
+            r = (0.009, 0.011, 0.008)[v]
+            ob = bpy.data.objects.new(f"Reflet_{n}", me); coll.objects.link(ob); ob.parent = riviere
+            ob.location = (*sur_l_eau(riviere, *voie[0]), 0.0015)
+            for i in range(3): cle(ob, 'scale', i, 0, 0.0, 'CONSTANT')
+            s = 40 + phase + 11 * v
+            while s + P <= 258:
+                for j, (xp, yp) in enumerate(voie):
+                    f = s + round(j * (P - 1) / (len(voie) - 1))
+                    x, y = sur_l_eau(riviere, xp, yp)
+                    cle(ob, 'location', 0, f, x, 'LINEAR'); cle(ob, 'location', 1, f, y, 'LINEAR')
+                for i in range(3):                      # il apparaît, grossit en s'approchant, puis s'efface
+                    cle(ob, 'scale', i, s, 0.0, 'QUAD', 'EASE_OUT')
+                    cle(ob, 'scale', i, s + 10, r * 0.7, 'LINEAR')
+                    cle(ob, 'scale', i, s + P - 12, r * 1.3, 'QUAD', 'EASE_IN')
+                    cle(ob, 'scale', i, s + P - 1, 0.0, 'CONSTANT')
+                s += P
+            for i in range(3): cle(ob, 'scale', i, FIN, 0.0, 'CONSTANT')
+            cle(ob, 'location', 2, 0, 0.0015, 'CONSTANT')
 
 
 # ================================================================== 6. LA CIGOGNE
@@ -434,104 +515,6 @@ def construire_cigogne(racine, coll):
     return cig
 
 
-# ================================================================== 7. FEUX D'ARTIFICE
-# Chaque gerbe est UN seul objet avec 3 "clés de forme" (shape keys) :
-#   Base      = toutes les étincelles réduites à un point au centre (invisible)
-#   Explosion = les étincelles éparpillées sur une sphère
-#   Fin       = encore plus loin, un peu plus bas (gravité) et réduites à rien
-# L'animation ne fait que changer le poids des clés de forme -> fichier léger.
-ETINCELLE_V = [(0, 0, 0.011), (0, 0, -0.0045), (0.0022, 0, 0), (-0.0022, 0, 0), (0, 0.0022, 0), (0, -0.0022, 0)]
-ETINCELLE_F = [(0, 2, 4), (0, 4, 3), (0, 3, 5), (0, 5, 2), (1, 4, 2), (1, 3, 4), (1, 5, 3), (1, 2, 5)]
-BAS_DE_LA_CARTE = -(H_PX / 2) * K - 0.01
-
-
-def directions(n):
-    """n directions bien réparties sur une sphère (spirale de Fibonacci)."""
-    out = []
-    for i in range(n):
-        z = 1 - 2 * (i + 0.5) / n
-        r = math.sqrt(1 - z * z); a = i * math.pi * (3 - math.sqrt(5))
-        out.append(Vector((r * math.cos(a), r * math.sin(a), z)))
-    return out
-
-
-def cle_forme(ob, nom_cle, frame, valeur, interp='BEZIER', easing='AUTO'):
-    """Image clé sur le poids d'une clé de forme."""
-    kb = ob.data.shape_keys.key_blocks[nom_cle]
-    kb.value = valeur
-    kb.keyframe_insert('value', frame=frame)
-    key = ob.data.shape_keys
-    sac = anim_utils.action_get_channelbag_for_slot(key.animation_data.action, key.animation_data.action_slot)
-    fc = sac.fcurves.find(f'key_blocks["{nom_cle}"].value')
-    for k in fc.keyframe_points:
-        if abs(k.co.x - frame) < 1e-3:
-            k.interpolation = interp; k.easing = easing
-
-
-def gerbe(nom, coll, parent, rayon, mat_couleur, mat_blanc, n=26):
-    base, explosion, fin, faces, mats = [], [], [], [], []
-    for j, d in enumerate(directions(n)):
-        q = Vector((0, 0, 1)).rotation_difference(d)
-        k0 = len(base)
-        for v in ETINCELLE_V:
-            vv = q @ Vector(v)
-            base.append(vv * 0.001)                                   # minuscule, au centre
-            explosion.append(d * rayon + vv)
-            fin.append(d * rayon * 1.25 + Vector((0, -0.035, 0)) + vv * 0.001)   # retombe vers le bas
-        for f in ETINCELLE_F:
-            faces.append(tuple(k0 + i for i in f)); mats.append(1 if j % 3 == 0 else 0)
-    me = bpy.data.meshes.new(nom)
-    me.from_pydata([tuple(v) for v in base], [], faces)
-    me.materials.append(mat_couleur); me.materials.append(mat_blanc)
-    for poly, m in zip(me.polygons, mats): poly.material_index = m
-    ob = bpy.data.objects.new(nom, me); coll.objects.link(ob); ob.parent = parent
-    ob.shape_key_add(name="Base", from_mix=False)
-    for nom_cle, pts in (("Explosion", explosion), ("Fin", fin)):
-        kb = ob.shape_key_add(name=nom_cle, from_mix=False)
-        for i, v in enumerate(pts): kb.data[i].co = v
-    return ob
-
-
-FEUX = [  # (image de l'explosion, position x y z, couleur, rayon) — au-dessus et devant le 2027
-    (100, (-0.22, 0.20, 0.12), '#FFD24A', 0.070),
-    (116, (0.12, 0.26, 0.16), '#FF4D5E', 0.075),
-    (132, (0.32, 0.18, 0.12), '#4DA8FF', 0.065),
-    (150, (-0.04, 0.22, 0.20), '#5BE37D', 0.080),
-    (170, (-0.33, 0.12, 0.16), '#FF6FD8', 0.070),
-    (190, (0.22, 0.14, 0.18), '#FFD24A', 0.080),
-    (212, (0.00, 0.16, 0.22), '#FFFFFF', 0.095),
-]
-
-def construire_feux(racine, coll):
-    blanc = materiau_couleur("M_feu_blanc", hexrgb('#FFF6D8'))
-    me_fusee = bpy.data.meshes.new("fusee")
-    me_fusee.from_pydata(ETINCELLE_V, [], ETINCELLE_F); me_fusee.materials.append(blanc)
-    groupe = vide("Feux_artifice", coll, (0, 0, 0), parent=racine)
-    for n, (tb, pos, couleur, rayon) in enumerate(FEUX, start=1):
-        feu = vide(f"Feu_{n}", coll, pos, parent=groupe, taille=0.02)
-        # 1) la fusée monte depuis le bas de la carte
-        fusee = bpy.data.objects.new(f"Fusee_{n}", me_fusee); coll.objects.link(fusee)
-        fusee.parent = feu
-        fusee.rotation_euler = (R(-90), 0, 0)              # pointe vers le haut de la carte
-        for i in range(3): cle(fusee, 'scale', i, 0, 0.0, 'CONSTANT')
-        for i in range(3): cle(fusee, 'scale', i, tb - 14, 0.8, 'CONSTANT')
-        for i in range(3): cle(fusee, 'scale', i, tb, 0.0, 'CONSTANT')
-        cle(fusee, 'location', 1, tb - 14, BAS_DE_LA_CARTE - pos[1], 'QUAD', 'EASE_OUT')
-        cle(fusee, 'location', 1, tb, 0.0, 'CONSTANT')
-        # 2) la gerbe explose puis s'éteint (clés de forme)
-        g = gerbe(f"Gerbe_{n}", coll, feu, rayon, materiau_couleur(f"M_feu_{n}", hexrgb(couleur)), blanc)
-        cle_forme(g, "Explosion", 0, 0.0, 'CONSTANT')
-        cle_forme(g, "Explosion", tb, 0.0, 'EXPO', 'EASE_OUT')
-        cle_forme(g, "Explosion", tb + 14, 1.0, 'QUAD', 'EASE_IN')
-        cle_forme(g, "Explosion", tb + 34, 0.0, 'CONSTANT')
-        cle_forme(g, "Explosion", FIN, 0.0, 'CONSTANT')
-        cle_forme(g, "Fin", 0, 0.0, 'CONSTANT')
-        cle_forme(g, "Fin", tb + 14, 0.0, 'QUAD', 'EASE_IN')
-        cle_forme(g, "Fin", tb + 34, 1.0, 'CONSTANT')
-        cle_forme(g, "Fin", FIN, 1.0, 'CONSTANT')
-    return groupe
-
-
 # ================================================================== 8. ÉTOILES QUI SCINTILLENT
 def maillage_etoile():
     me = bpy.data.meshes.new("etoile")
@@ -567,15 +550,39 @@ def construire_etoiles(racine, coll):
     return groupe
 
 
-# ================================================================== 8 bis. NEIGE (version sans feux d'artifice)
-# Les flocons tombent du haut vers le bas de la carte, à différentes distances devant elle.
-# Leur période (4 s ou 6 s) divise les 12 s : la boucle est parfaite.
-def maillage_flocon(nom, couleur):
+# ================================================================== 8 bis. LA NEIGE
+# Des flocons à 6 branches tombent du haut vers le bas de la carte, à différentes distances devant elle :
+# les plus proches paraissent plus gros, ce qui donne de la profondeur. Ils tournent sur eux-mêmes
+# en tombant et se balancent de gauche à droite.
+# Leur durée de chute (4 s ou 6 s) divise les 12 s : la boucle est parfaite.
+def maillage_boule(nom, couleur):
+    """Petite boule (icosphère de rayon 1) : les bouffées de fumée."""
     import bmesh
     me = bpy.data.meshes.new(nom)
     bm = bmesh.new()
-    bmesh.ops.create_icosphere(bm, subdivisions=1, radius=1.0)    # petite boule : visible sous tous les angles
+    bmesh.ops.create_icosphere(bm, subdivisions=1, radius=1.0)
     bm.to_mesh(me); bm.free()
+    me.materials.append(materiau_couleur("M_" + nom, hexrgb(couleur)))
+    return me
+
+
+def maillage_cristal(nom, couleur):
+    """Flocon à plat (rayon 1), face à la personne qui regarde : 6 branches, chacune avec 2 petites branches."""
+    v, f = [], []
+    def barre(x0, y0, a, longueur, largeur):
+        ca, sa = math.cos(a), math.sin(a)
+        nx, ny = -sa * largeur / 2, ca * largeur / 2
+        x1, y1 = x0 + ca * longueur, y0 + sa * longueur
+        k = len(v)
+        v.extend([(x0 + nx, y0 + ny, 0), (x0 - nx, y0 - ny, 0), (x1 - nx, y1 - ny, 0), (x1 + nx, y1 + ny, 0)])
+        f.append((k, k + 1, k + 2, k + 3))
+    for i in range(6):
+        a = i * math.pi / 3
+        barre(0, 0, a, 1.0, 0.24)                                         # la branche
+        for cote in (1, -1):                                              # les 2 petites branches en V
+            barre(0.5 * math.cos(a), 0.5 * math.sin(a), a + cote * R(55), 0.42, 0.18)
+    me = bpy.data.meshes.new(nom)
+    me.from_pydata(v, [], f)
     me.materials.append(materiau_couleur("M_" + nom, hexrgb(couleur)))
     return me
 
@@ -583,21 +590,24 @@ def maillage_flocon(nom, couleur):
 def construire_neige(racine, coll, n=48):
     import random
     alea = random.Random(2027)                       # toujours le même tirage
-    me_blanc = maillage_flocon("flocon_blanc", '#FFFFFF')
-    me_bleute = maillage_flocon("flocon_bleute", '#CFE3FF')   # bleuté : se voit aussi sur le papier blanc
+    # deux bleus clairs : un flocon blanc ne se verrait pas sur le papier blanc
+    maillages = (maillage_cristal("flocon_clair", '#B8D6F5'), maillage_cristal("flocon_bleu", '#8EBBEA'))
     groupe = vide("Neige", coll, (0, 0, 0), parent=racine)
     HAUT, BAS = 0.33, -0.30                          # du haut de la carte jusqu'en bas
     for k in range(n):
-        f = bpy.data.objects.new(f"Flocon_{k + 1:02d}", me_blanc if k % 2 else me_bleute)
+        f = bpy.data.objects.new(f"Flocon_{k + 1:02d}", maillages[k % 2])
         coll.objects.link(f); f.parent = groupe
         x0, z0 = alea.uniform(-0.48, 0.48), alea.uniform(0.02, 0.30)
-        r = alea.uniform(0.0045, 0.0075)             # rayon du flocon
+        r = alea.uniform(0.009, 0.016)               # rayon du flocon
         P = 144 if k % 3 else 96                     # durée d'une chute : 6 s ou 4 s
         s = alea.randrange(P) - P                    # décalage : les flocons ne tombent pas ensemble
+        tour = R(alea.choice((-1, 1)) * alea.uniform(90, 180))     # il tourne sur lui-même en tombant
         f.location = (x0, HAUT, z0)
         while s < FIN + P:
             cle(f, 'location', 1, s, HAUT, 'LINEAR')
             cle(f, 'location', 1, s + P - 1, BAS, 'CONSTANT')
+            cle(f, 'rotation_euler', 2, s, 0.0, 'LINEAR')
+            cle(f, 'rotation_euler', 2, s + P - 1, tour, 'CONSTANT')
             for i in range(3):
                 cle(f, 'scale', i, s, 0.0, 'QUAD', 'EASE_OUT')
                 cle(f, 'scale', i, s + 12, r, 'CONSTANT')
@@ -646,8 +656,7 @@ def construire():
     c_ref = collection("Carte imprimée (repère, non exportée)")
     c_pop = collection("Pop-up")
     c_cig = collection("Cigogne")
-    c_feu = collection(FEUX_COLL)
-    c_nei = collection(NEIGE_COLL)
+    c_nei = collection("Neige")
     c_eto = collection("Etoiles")
     c_cam = collection("Caméra (aperçu)")
     carte_reference(c_ref)
@@ -655,37 +664,19 @@ def construire():
     pieces = construire_popup(racine, c_pop)
     construire_fumee(pieces['maisons'], c_pop)
     construire_drapeau(pieces['chateau'], c_pop)
-    construire_bateau(racine, c_pop)
+    construire_bateau(pieces['riviere'], c_pop)
+    construire_reflets(pieces['riviere'], c_pop)
     construire_cigogne(racine, c_cig)
-    construire_feux(racine, c_feu)
     construire_neige(racine, c_nei)
     construire_etoiles(racine, c_eto)
-    cam = camera_apercu(c_cam)
+    camera_apercu(c_cam)
     c_cam.hide_render = True        # la caméra n'est pas exportée non plus
-    choisir_version(sans_feux=False)
     bpy.context.scene.frame_set(150)
 
 
-FEUX_COLL = "Feux d'artifice"
-NEIGE_COLL = "Neige (version sans feux)"
-
-def choisir_version(sans_feux):
-    """Comme cliquer sur l'appareil photo et l'œil des 2 collections dans l'Outliner."""
-    feux, neige = bpy.data.collections[FEUX_COLL], bpy.data.collections[NEIGE_COLL]
-    feux.hide_render, neige.hide_render = sans_feux, not sans_feux
-    lc = bpy.context.view_layer.layer_collection.children
-    lc[FEUX_COLL].hide_viewport, lc[NEIGE_COLL].hide_viewport = sans_feux, not sans_feux
-
-
-def exporter_les_deux(dossier_assets):
-    """assets/carte.glb (feux d'artifice) et assets/carte-sans-feux.glb (neige)."""
-    choisir_version(sans_feux=True)
-    exporter_glb(os.path.join(dossier_assets, "carte-sans-feux.glb"))
-    choisir_version(sans_feux=False)
-    exporter_glb(os.path.join(dossier_assets, "carte.glb"))
-
-
-def exporter_glb(chemin):
+def exporter_glb(chemin=None):
+    """Comme Fichier > Exporter > glTF 2.0, avec les réglages expliqués dans le README."""
+    chemin = chemin or os.path.normpath(os.path.join(BLEND_DIR, "..", "assets", "carte.glb"))
     bpy.ops.export_scene.gltf(
         filepath=chemin, export_format='GLB',
         use_renderable=True,                 # seulement ce qui est "rendu" (pas la carte repère)
@@ -694,9 +685,10 @@ def exporter_glb(chemin):
         export_animation_mode='SCENE',       # toute la timeline = une seule animation
         export_anim_scene_split_object=False,
         export_frame_range=True,
-        export_force_sampling=True,          # les interpolations Back/Bounce sont "cuites"
+        export_force_sampling=True,          # les interpolations Back/Bounce et les sinus sont "cuits"
         export_cameras=False, export_lights=False,
         export_image_format='AUTO')
+    return chemin
 
 
 if __name__ == "__main__":
