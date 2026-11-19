@@ -10,6 +10,7 @@ L'animation dure 12 secondes et tourne en boucle. Tout se passe dans le navigate
 ![Aperçu de l'animation](apercu/apercu.png)
 
 La vidéo `apercu/apercu-animation.mp4` montre l'animation complète.
+Il existe aussi une **version sans feux d'artifice**, où la neige les remplace : voir plus bas et `apercu/apercu-animation-sans-feux.mp4`.
 
 ---
 
@@ -54,7 +55,8 @@ Dessin (Illustrator)  →  calques PNG  →  Blender (animation)  →  carte.glb
 | 30 → 270 | Les sapins et les feuilles se balancent | Rotation Y de ± 2 à 3° |
 | 60 → 252 | La cigogne s'envole, fait le tour de la scène et se repose | Vide parent *Cigogne* (position, cap) ; les ailes tournent autour de l'axe du corps |
 | 84 et 196 | Vague 2-0-2-7 | Position Z, interpolation **Bounce** |
-| 86 → 246 | 7 feux d'artifice | Une fusée qui monte, puis une gerbe animée par **clés de forme** (*Base → Explosion → Fin*) |
+| 86 → 246 | 7 feux d'artifice (version normale) | Une fusée qui monte, puis une gerbe animée par **clés de forme** (*Base → Explosion → Fin*) |
+| 0 → 288 | Neige (version sans feux) | 48 flocons qui descendent en boucle (4 s ou 6 s par chute) en se balançant |
 | 70 → 250 | Étoiles qui scintillent | Échelle de 0 à 1 puis 0 |
 | 258 → 285 | Tout se replie, puis l'animation recommence | Rotation X de 90° à 0°, interpolation **Back** |
 
@@ -68,6 +70,16 @@ Le script `blender/construire_carte.py`, dans l'onglet *Scripting*, reconstruit 
 - Transformation : **+Y Up**
 - Animation : mode **Scene**, *Split by Object* décoché. Toute la timeline devient **une seule animation**.
 - *Always Sample Animations* coché : les interpolations Back et Bounce sont « cuites » image par image.
+
+**La version sans feux d'artifice**
+
+Si les feux d'artifice ne sont pas autorisés, la collection *Neige (version sans feux)* les remplace.
+
+1. Dans l'Outliner, cliquer sur l'**appareil photo** pour désactiver *Feux d'artifice* et activer *Neige*. L'œil sert seulement à l'affichage dans Blender.
+2. Exporter avec les mêmes réglages vers `assets/carte-sans-feux.glb`.
+3. Dans `index.html`, remplacer `carte.glb` par `carte-sans-feux.glb`. C'est le seul changement à faire.
+
+Les deux fichiers sont déjà exportés : il suffit de faire l'étape 3 pour changer de version.
 
 ### 3. La page web : `index.html`
 

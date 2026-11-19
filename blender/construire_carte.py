@@ -11,6 +11,8 @@ Repères à retenir pour l'oral :
   Le pop-up = rotation X de 0° (à plat) à 90° (debout).
 - Les matériaux sont "sans ombre" (unlit) et découpés par l'alpha du PNG.
 - L'animation dure 12 s (288 images à 24 i/s) et boucle : tout se replie à la fin.
+- Deux versions : "Feux d'artifice" (assets/carte.glb) ou "Neige" (assets/carte-sans-feux.glb).
+  On passe de l'une à l'autre avec l'appareil photo des 2 collections dans l'Outliner.
 """
 import bpy, json, math, os
 from mathutils import Vector, Matrix
@@ -400,6 +402,51 @@ def construire_etoiles(racine, coll):
     return groupe
 
 
+# ================================================================== 8 bis. NEIGE (version sans feux d'artifice)
+# Les flocons tombent en continu. Chaque flocon descend, disparaît en touchant la carte
+# et réapparaît en haut. Leur période (4 s ou 6 s) divise les 12 s : la boucle est parfaite.
+def maillage_flocon(nom, couleur):
+    import bmesh
+    me = bpy.data.meshes.new(nom)
+    bm = bmesh.new()
+    bmesh.ops.create_icosphere(bm, subdivisions=1, radius=1.0)    # petite boule : visible sous tous les angles
+    bm.to_mesh(me); bm.free()
+    me.materials.append(materiau_couleur("M_" + nom, hexrgb(couleur)))
+    return me
+
+
+def construire_neige(racine, coll, n=48):
+    import random
+    alea = random.Random(2027)                       # toujours le même tirage
+    me_blanc = maillage_flocon("flocon_blanc", '#FFFFFF')
+    me_bleute = maillage_flocon("flocon_bleute", '#CFE3FF')   # bleuté : se voit aussi sur le papier blanc
+    groupe = vide("Neige", coll, (0, 0, 0), parent=racine)
+    HAUT, BAS = 0.46, 0.01
+    for k in range(n):
+        f = bpy.data.objects.new(f"Flocon_{k + 1:02d}", me_blanc if k % 2 else me_bleute)
+        coll.objects.link(f); f.parent = groupe
+        x0, y0 = alea.uniform(-0.48, 0.48), alea.uniform(-0.22, 0.22)
+        r = alea.uniform(0.0045, 0.0075)             # rayon du flocon
+        P = 144 if k % 3 else 96                     # durée d'une chute : 6 s ou 4 s
+        s = alea.randrange(P) - P                    # décalage : les flocons ne tombent pas ensemble
+        f.location = (x0, y0, HAUT)
+        while s < FIN + P:
+            cle(f, 'location', 2, s, HAUT, 'LINEAR')
+            cle(f, 'location', 2, s + P - 1, BAS, 'CONSTANT')
+            for i in range(3):
+                cle(f, 'scale', i, s, 0.0, 'QUAD', 'EASE_OUT')
+                cle(f, 'scale', i, s + 12, r, 'CONSTANT')
+                cle(f, 'scale', i, s + P - 19, r, 'QUAD', 'EASE_IN')
+                cle(f, 'scale', i, s + P - 1, 0.0, 'CONSTANT')
+            s += P
+        # petit balancement gauche-droite pendant la chute
+        g, signe, amp = alea.randrange(18) - 72, 1, alea.uniform(0.008, 0.02)
+        while g < FIN + 72:
+            cle(f, 'location', 0, g, x0 + amp * signe)
+            signe = -signe; g += 18
+    return groupe
+
+
 # ================================================================== 9. CARTE DE RÉFÉRENCE + CAMÉRA
 def carte_reference(coll):
     me = bpy.data.meshes.new("carte_plan")
@@ -434,7 +481,8 @@ def construire():
     c_ref = collection("Carte imprimée (repère, non exportée)")
     c_pop = collection("Pop-up")
     c_cig = collection("Cigogne")
-    c_feu = collection("Feux d'artifice")
+    c_feu = collection(FEUX_COLL)
+    c_nei = collection(NEIGE_COLL)
     c_eto = collection("Etoiles")
     c_cam = collection("Caméra (aperçu)")
     carte_reference(c_ref)
@@ -442,10 +490,31 @@ def construire():
     construire_popup(racine, c_pop)
     construire_cigogne(racine, c_cig)
     construire_feux(racine, c_feu)
+    construire_neige(racine, c_nei)
     construire_etoiles(racine, c_eto)
     cam = camera_apercu(c_cam)
     c_cam.hide_render = True        # la caméra n'est pas exportée non plus
+    choisir_version(sans_feux=False)
     bpy.context.scene.frame_set(150)
+
+
+FEUX_COLL = "Feux d'artifice"
+NEIGE_COLL = "Neige (version sans feux)"
+
+def choisir_version(sans_feux):
+    """Comme cliquer sur l'appareil photo et l'œil des 2 collections dans l'Outliner."""
+    feux, neige = bpy.data.collections[FEUX_COLL], bpy.data.collections[NEIGE_COLL]
+    feux.hide_render, neige.hide_render = sans_feux, not sans_feux
+    lc = bpy.context.view_layer.layer_collection.children
+    lc[FEUX_COLL].hide_viewport, lc[NEIGE_COLL].hide_viewport = sans_feux, not sans_feux
+
+
+def exporter_les_deux(dossier_assets):
+    """assets/carte.glb (feux d'artifice) et assets/carte-sans-feux.glb (neige)."""
+    choisir_version(sans_feux=True)
+    exporter_glb(os.path.join(dossier_assets, "carte-sans-feux.glb"))
+    choisir_version(sans_feux=False)
+    exporter_glb(os.path.join(dossier_assets, "carte.glb"))
 
 
 def exporter_glb(chemin):
