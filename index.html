@@ -17,9 +17,10 @@
   </style>
 </head>
 <body>
-  <!-- La scène AR. targets.mind = l'image de la carte "compilée" pour que MindAR la reconnaisse -->
+  <!-- La scène AR. targets.mind = l'image de la carte "compilée" pour que MindAR la reconnaisse.
+       filterMinCF / filterBeta : lissage du suivi (plus petit = moins de tremblements, un peu plus de retard) -->
   <a-scene
-    mindar-image="imageTargetSrc: assets/targets.mind; maxTrack: 1; filterMinCF: 0.001; filterBeta: 30; missTolerance: 10"
+    mindar-image="imageTargetSrc: assets/targets.mind; maxTrack: 1; filterMinCF: 0.0001; filterBeta: 10; missTolerance: 10"
     color-space="sRGB"
     renderer="colorManagement: true; antialias: true"
     vr-mode-ui="enabled: false"

@@ -175,13 +175,13 @@ PROFONDEUR = {
 }
 
 
-def sortie(ob, debut, repli, profondeur):
+def sortie(ob, debut, repli, profondeur, duree=20):
     """Le calque sort de la carte vers nous (avec rebond), puis y rentre à la fin."""
     z0 = ob.location.z
     # 1) il avance vers le spectateur (position Z)
     cle(ob, 'location', 2, 0, z0, 'CONSTANT')
-    cle(ob, 'location', 2, debut, z0, 'BACK', 'EASE_OUT', back=2.2)
-    cle(ob, 'location', 2, debut + 16, z0 + profondeur, 'CONSTANT')
+    cle(ob, 'location', 2, debut, z0, 'BACK', 'EASE_OUT', back=1.6)
+    cle(ob, 'location', 2, debut + duree, z0 + profondeur, 'CONSTANT')
     cle(ob, 'location', 2, repli, z0 + profondeur, 'BACK', 'EASE_IN', back=1.4)
     cle(ob, 'location', 2, repli + 10, z0, 'CONSTANT')
     cle(ob, 'location', 2, FIN, z0, 'CONSTANT')
@@ -195,6 +195,47 @@ def sortie(ob, debut, repli, profondeur):
     cle(ob, 'rotation_euler', 0, repli + 5, R(18), 'QUAD', 'EASE_IN')
     cle(ob, 'rotation_euler', 0, repli + 10, 0.0, 'CONSTANT')
     cle(ob, 'rotation_euler', 0, FIN, 0.0, 'CONSTANT')
+    return z0 + profondeur
+
+
+# Une fois sorti, chaque élément "respire" : il avance et recule un peu (Z), monte et descend (Y)
+# et pivote légèrement sur lui-même (rotation Y). Comme le relief change tout le temps,
+# on voit la profondeur même sans bouger le téléphone.
+#          amplitude Z, amplitude Y, pivot (°), période (images), décalage
+FLOTTE = {
+    'vignes':     (0.008, 0.003, 5, 96, 0),
+    'feuilles':   (0.009, 0.000, 0, 84, 10),
+    'chateau':    (0.008, 0.003, 5, 108, 20),
+    'chiffre_2a': (0.010, 0.000, 0, 72, 0), 'chiffre_0': (0.010, 0.000, 0, 72, 9),
+    'chiffre_2b': (0.010, 0.000, 0, 72, 18), 'chiffre_7': (0.010, 0.000, 0, 72, 27),
+    'pont':       (0.009, 0.003, 6, 120, 30),
+    'sapins_2':   (0.010, 0.000, 0, 90, 5),
+    'sapin_1':    (0.010, 0.000, 0, 78, 15),
+    'maisons':    (0.010, 0.004, 6, 100, 40),
+    'texte':      (0.012, 0.004, 6, 88, 12),
+}
+
+def oscille(ob, chemin, index, t1, t2, centre, amplitude, periode, decalage):
+    """Va-et-vient doux autour de "centre" entre les images t1 et t2."""
+    cle(ob, chemin, index, t1, centre)
+    f, signe = t1 + periode // 4 + decalage, 1
+    while f < t2 - periode // 4:
+        cle(ob, chemin, index, f, centre + signe * amplitude)
+        signe = -signe; f += periode // 2
+    cle(ob, chemin, index, t2, centre, 'CONSTANT')
+
+
+def flotter(ob, debut, repli, z_sorti, nom):
+    amp_z, amp_y, pivot, periode, decalage = FLOTTE[nom]
+    t1, t2 = debut + 34, repli - 2
+    oscille(ob, 'location', 2, t1, t2, z_sorti, amp_z, periode, decalage)
+    if amp_y:
+        y0 = ob.location.y
+        cle(ob, 'location', 1, 0, y0, 'CONSTANT'); cle(ob, 'location', 1, FIN, y0, 'CONSTANT')
+        oscille(ob, 'location', 1, t1, t2, y0, amp_y, int(periode * 0.75), decalage + 7)
+    if pivot:
+        cle(ob, 'rotation_euler', 1, 0, 0.0, 'CONSTANT'); cle(ob, 'rotation_euler', 1, FIN, 0.0, 'CONSTANT')
+        oscille(ob, 'rotation_euler', 1, t1, t2, 0.0, R(pivot), int(periode * 1.25), decalage + 3)
 
 
 def balancement(ob, debut, fin, amplitude=3.0, periode=48, dephasage=0):
@@ -233,7 +274,8 @@ def construire_popup(racine, coll):
         # à plat se chevauchent exactement au même endroit (z-fighting)
         ob = plan_calque(nom, ((x0 + x1) / 2, charniere), coll, z=0.0004 + 0.0003 * rang, parent=racine)
         debut, repli = CALENDRIER[nom]
-        sortie(ob, debut, repli, PROFONDEUR[nom])
+        z_sorti = sortie(ob, debut, repli, PROFONDEUR[nom])
+        flotter(ob, debut, repli, z_sorti, nom)
         pieces[nom] = ob
     # la vague 2-0-2-7 : chaque chiffre saute vers le haut et fait un tour sur lui-même
     for tour, vague in ((1, 84), (2, 196)):
@@ -255,6 +297,98 @@ def construire_popup(racine, coll):
     balancement(pieces['sapins_2'], 64, 258, amplitude=2.5, periode=54, dephasage=6)
     balancement(pieces['feuilles'], 30, 270, amplitude=2.5, periode=60)
     return pieces
+
+
+# ================================================================== 5 bis. LES PETITS DÉTAILS QUI VIVENT
+def construire_fumee(maisons, coll, n=5):
+    """Fumée de la cheminée : des petites boules qui montent, grossissent puis disparaissent."""
+    me = maillage_flocon("fumee", '#E4E9EE')
+    cx, cy = (652 - 482.5) * K, (1000 - 522) * K      # haut de la cheminée, dans le repère du calque des maisons
+    P = 60                                              # une bouffée dure 2,5 s
+    for k in range(n):
+        b = bpy.data.objects.new(f"Fumee_{k + 1}", me); coll.objects.link(b); b.parent = maisons
+        for i in range(3): cle(b, 'scale', i, 0, 0.0, 'CONSTANT')
+        s = 84 + k * (P // n)
+        while s + P <= 250:
+            cle(b, 'location', 0, s, cx, 'LINEAR'); cle(b, 'location', 1, s, cy, 'QUAD', 'EASE_OUT')
+            cle(b, 'location', 2, s, 0.003, 'CONSTANT')
+            cle(b, 'location', 0, s + P - 1, cx + 0.03, 'CONSTANT'); cle(b, 'location', 1, s + P - 1, cy + 0.07, 'CONSTANT')
+            for i in range(3):
+                cle(b, 'scale', i, s, 0.003, 'QUAD', 'EASE_OUT')
+                cle(b, 'scale', i, s + P // 2, 0.011, 'QUAD', 'EASE_IN')
+                cle(b, 'scale', i, s + P - 1, 0.0, 'CONSTANT')
+            s += P
+        for i in range(3): cle(b, 'scale', i, FIN, 0.0, 'CONSTANT')
+
+
+def construire_drapeau(chateau, coll):
+    """Drapeau alsacien (rouge et blanc) sur la tour : il se hisse puis flotte (2 clés de forme)."""
+    base = vide("Drapeau", coll, ((2300 - 2126.5) * K, (705 - 300) * K, 0.001), parent=chateau, taille=0.01)
+    h, e, L, F, n = 0.032, 0.0012, 0.036, 0.022, 8
+    # le mât
+    me = bpy.data.meshes.new("mat")
+    v = [(x, y, z) for y in (0, h) for (x, z) in ((-e, -e), (e, -e), (e, e), (-e, e))]
+    f = [(0, 1, 2, 3), (4, 7, 6, 5), (0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0)]
+    me.from_pydata(v, [], f); me.materials.append(materiau_couleur("M_mat", hexrgb('#5A4A3A')))
+    mat = bpy.data.objects.new("Mat", me); coll.objects.link(mat); mat.parent = base
+    # le tissu : bande rouge en haut, bande blanche en bas
+    me = bpy.data.meshes.new("drapeau")
+    v = [(L * i / n, h - F * j / 2, 0) for j in range(3) for i in range(n + 1)]
+    f = [(j * (n + 1) + i, j * (n + 1) + i + 1, (j + 1) * (n + 1) + i + 1, (j + 1) * (n + 1) + i) for j in range(2) for i in range(n)]
+    me.from_pydata(v, [], f)
+    me.materials.append(materiau_couleur("M_drapeau_rouge", hexrgb('#D72631')))
+    me.materials.append(materiau_couleur("M_drapeau_blanc", hexrgb('#FFFFFF')))
+    for k, poly in enumerate(me.polygons): poly.material_index = 0 if k < n else 1
+    tissu = bpy.data.objects.new("Drapeau_tissu", me); coll.objects.link(tissu); tissu.parent = base
+    # deux clés de forme décalées d'un quart d'onde : en les alternant, la vague avance
+    tissu.shape_key_add(name="Base", from_mix=False)
+    for nom, fn in (("Vague_A", math.sin), ("Vague_B", math.cos)):
+        kb = tissu.shape_key_add(name=nom, from_mix=False); kb.slider_min = -1.0
+        for i, p in enumerate(v):
+            kb.data[i].co = (p[0], p[1], 0.005 * (p[0] / L) * fn(2 * math.pi * p[0] / L))
+    for k_f, f0 in enumerate(range(0, FIN + 1, 6)):
+        cle_forme(tissu, "Vague_A", f0, (1, 0, -1, 0)[k_f % 4])
+        cle_forme(tissu, "Vague_B", f0, (0, 1, 0, -1)[k_f % 4])
+    # il se hisse quand le château sort, et redescend à la fin
+    for i in range(3):
+        cle(base, 'scale', i, 0, 0.0, 'CONSTANT')
+        cle(base, 'scale', i, 44, 0.0, 'BACK', 'EASE_OUT')
+        cle(base, 'scale', i, 56, 1.0, 'CONSTANT')
+        cle(base, 'scale', i, 262, 1.0, 'QUAD', 'EASE_IN')
+        cle(base, 'scale', i, 268, 0.0, 'CONSTANT')
+        cle(base, 'scale', i, FIN, 0.0, 'CONSTANT')
+
+
+# Le trajet de la barque sur la rivière : elle sort de derrière le « 0 »,
+# passe sous l'arche du milieu du pont et grossit en s'approchant de nous.
+RIVIERE = [  # (image, x, y en pixels du dessin, taille)
+    (70, 1185, 515, 0.45), (95, 1150, 575, 0.52), (120, 1180, 630, 0.58), (145, 1265, 672, 0.65),
+    (165, 1320, 735, 0.72), (185, 1300, 805, 0.80), (205, 1265, 880, 0.88), (225, 1215, 945, 0.95), (242, 1185, 995, 1.0)]
+
+def construire_bateau(racine, coll):
+    W, Hb = 220, 130                                   # taille du calque bateau.png en pixels
+    me = bpy.data.meshes.new("bateau_plan")
+    me.from_pydata([(-W / 2 * K, 0, 0), (W / 2 * K, 0, 0), (W / 2 * K, Hb * K, 0), (-W / 2 * K, Hb * K, 0)], [], [(0, 1, 2, 3)])
+    uv = me.uv_layers.new(name="UVMap")
+    for i, c in enumerate([(0, 0), (1, 0), (1, 1), (0, 1)]): uv.data[i].uv = c
+    me.materials.append(materiau_calque("M_bateau", os.path.join(CALQUES, "bateau.png")))
+    ob = bpy.data.objects.new("Bateau", me); coll.objects.link(ob); ob.parent = racine
+    x0, y0 = px(*RIVIERE[0][1:3]); ob.location = (x0, y0, 0.022)
+    for i in range(3): cle(ob, 'scale', i, 0, 0.0, 'CONSTANT')
+    for i in range(3): cle(ob, 'scale', i, 62, 0.0, 'QUAD', 'EASE_OUT')
+    for (f, xp, yp, taille) in RIVIERE:
+        x, y = px(xp, yp)
+        cle(ob, 'location', 0, f, x); cle(ob, 'location', 1, f, y)
+        for i in range(3): cle(ob, 'scale', i, f, taille)
+    for i in range(3): cle(ob, 'scale', i, 250, 0.0, 'CONSTANT')
+    for i in range(3): cle(ob, 'scale', i, FIN, 0.0, 'CONSTANT')
+    cle(ob, 'location', 2, 0, 0.022, 'CONSTANT')
+    # proue vers la droite au début, puis demi-tour caché sous le pont (rotation Y)
+    cle(ob, 'rotation_euler', 1, 0, 0.0, 'CONSTANT')
+    cle(ob, 'rotation_euler', 1, 158, 0.0)
+    cle(ob, 'rotation_euler', 1, 182, R(180), 'CONSTANT')
+    cle(ob, 'rotation_euler', 1, FIN, R(180), 'CONSTANT')
+    return ob
 
 
 # ================================================================== 6. LA CIGOGNE
@@ -518,7 +652,10 @@ def construire():
     c_cam = collection("Caméra (aperçu)")
     carte_reference(c_ref)
     racine = vide("Carte_PopUp", c_pop, (0, 0, 0), taille=0.1, forme='ARROWS')
-    construire_popup(racine, c_pop)
+    pieces = construire_popup(racine, c_pop)
+    construire_fumee(pieces['maisons'], c_pop)
+    construire_drapeau(pieces['chateau'], c_pop)
+    construire_bateau(racine, c_pop)
     construire_cigogne(racine, c_cig)
     construire_feux(racine, c_feu)
     construire_neige(racine, c_nei)

@@ -1,8 +1,9 @@
 # Carte de vœux 2027 en réalité augmentée
 
-Carte à colorier de la préfecture du Haut-Rhin. Quand on vise la carte imprimée avec un téléphone,
-le dessin prend des couleurs et se déplie comme un livre pop-up. Les chiffres 2027 sautent en vague,
-des feux d'artifice éclatent au-dessus, et la cigogne s'envole avant de revenir se poser.
+Carte à colorier de la préfecture du Haut-Rhin. Quand on vise la carte (imprimée ou affichée sur un écran)
+avec un téléphone, le dessin prend des couleurs et ses éléments **sortent de la carte vers nous**, chacun à
+sa profondeur, comme les décors d'un théâtre. Les chiffres 2027 sautent et tournent sur eux-mêmes,
+des feux d'artifice éclatent au-dessus, et la cigogne s'envole vers nous avant de revenir se poser.
 L'animation dure 12 secondes et tourne en boucle. Tout se passe dans le navigateur, sans application.
 
 **Site :** https://last64.github.io/CarteDeVoeux/ (ouvrir sur le téléphone, autoriser la caméra, viser la carte)
@@ -35,14 +36,18 @@ Dessin (Illustrator)  →  calques PNG  →  Blender (animation)  →  carte.glb
 **Les repères**
 
 - La carte fait **1 m de large** dans Blender, parce que dans MindAR 1 unité = la largeur de la carte.
-- La carte est **posée au sol** (plan XY). La vue de dessus (pavé num. 7) montre exactement la carte imprimée.
+- On regarde la carte **de face**, comme sur un écran ou tenue devant soi : **+X** = droite de la carte,
+  **+Y** = haut de la carte, **+Z** = vers la personne qui regarde.
+  Dans Blender, la carte est posée au sol (plan XY) : la vue de dessus (pavé num. 7) montre ce que voit le téléphone.
 - La collection *Carte imprimée* sert seulement de repère. Elle est cachée au rendu, donc elle n'est pas exportée.
 
 **Les calques**
 
 - Chaque calque est un plan à la taille exacte de son PNG, placé à sa position sur la carte.
 - Son **origine est sur sa charnière**, c'est-à-dire en bas de l'élément.
-- Il se lève jusqu'à **45°**, et pas 90° : à 90°, un élément filmé de face est vu par la tranche et disparaît.
+- Quand il sort, il **avance vers nous** (position Z) jusqu'à sa profondeur, de 0,02 à 0,085 (soit 0,5 à 2 cm sur la vraie carte).
+  Plus il est devant dans le dessin, plus il avance. En sortant, son haut **bascule** vers nous puis revient (rotation X) :
+  de face, c'est ce mouvement qui montre le relief.
 - Le matériau est **sans ombre** : nœuds *Light Path > Is Camera Ray* + *Emission*,
   que l'export glTF transforme en `KHR_materials_unlit`. Les couleurs restent donc les mêmes quel que soit l'éclairage.
 - La transparence du PNG passe par un nœud *Math > Round*, qui donne une découpe nette (`alphaMode MASK` dans le glTF).
@@ -52,14 +57,14 @@ Dessin (Illustrator)  →  calques PNG  →  Blender (animation)  →  carte.glb
 | Images | Ce qui se passe | Technique |
 |---|---|---|
 | 0 | La carte apparaît coloriée, à plat | – |
-| 8 → 76 | Les éléments se lèvent un par un, de l'arrière vers l'avant | Rotation X de 0° à 45°, interpolation **Back** (rebond) |
-| 30 → 270 | Les sapins et les feuilles se balancent | Rotation Y de ± 2 à 3° |
-| 60 → 252 | La cigogne s'envole, fait le tour de la scène et se repose | Vide parent *Cigogne* : position, inclinaison à 45°, demi-tour (rotation Y) ; les ailes tournent autour de l'axe du corps |
-| 84 et 196 | Vague 2-0-2-7 | Position Z, interpolation **Bounce** |
+| 8 → 78 | Les éléments sortent de la carte un par un | Position Z, interpolation **Back** (rebond) + bascule en rotation X, interpolation **Elastic** |
+| 30 → 270 | Les sapins et les feuilles se balancent | Rotation Z de ± 2,5 à 3° autour de leur pied |
+| 60 → 252 | La cigogne s'envole, vient vers nous, fait le tour de la carte et se repose | Vide parent *Cigogne* : position (elle grossit en s'approchant), demi-tour en rotation Y ; les ailes tournent autour de l'axe du corps |
+| 84 et 196 | Vague 2-0-2-7 : chaque chiffre saute et fait un tour sur lui-même | Position Y, interpolation **Bounce** + rotation Y de 360° |
 | 86 → 246 | 7 feux d'artifice (version normale) | Une fusée qui monte, puis une gerbe animée par **clés de forme** (*Base → Explosion → Fin*) |
 | 0 → 288 | Neige (version sans feux) | 48 flocons qui descendent en boucle (4 s ou 6 s par chute) en se balançant |
 | 70 → 250 | Étoiles qui scintillent | Échelle de 0 à 1 puis 0 |
-| 258 → 285 | Tout se replie, puis l'animation recommence | Rotation X de 45° à 0°, interpolation **Back** |
+| 258 → 285 | Tout rentre dans la carte, puis l'animation recommence | Position Z jusqu'à 0, interpolation **Back** |
 
 Les courbes se voient dans le *Graph Editor* et la *Dope Sheet*.
 Le script `blender/construire_carte.py`, dans l'onglet *Scripting*, reconstruit toute la scène.
@@ -103,7 +108,7 @@ Ce sont les mêmes bibliothèques que dans l'exemple du cours.
 - `targets.mind` est l'image de la carte compilée par le compilateur de MindAR
   (le même que l'outil en ligne https://hiukim.github.io/mind-ar-js-doc/tools/compile).
 
-`apercu.html` montre la même scène **sans caméra** : la carte et le pop-up sur une table virtuelle.
+`apercu.html` montre la même scène **sans caméra** : la carte de face, comme sur un écran, qui pivote doucement pour montrer le relief.
 C'est pratique pour tester sur un ordinateur, ou comme solution de secours pendant une présentation.
 
 ### 4. La mise en ligne
@@ -118,7 +123,8 @@ La caméra ne fonctionne qu'en **https**, d'où GitHub Pages :
 - **Sur ordinateur** : ouvrir le dossier dans VS Code, puis *clic droit sur `apercu.html` > Open with Live Server*.
   Avec `index.html` et une webcam, on peut viser la carte imprimée ou affichée sur un autre écran.
 - **Sur téléphone** : ouvrir le lien GitHub Pages et viser la carte.
-  Elle doit être bien éclairée et entièrement visible au début.
+  Elle doit être bien éclairée et entièrement visible au début. En bougeant un peu le téléphone,
+  on voit les éléments à des profondeurs différentes.
 
 ## Modifier
 
@@ -127,10 +133,10 @@ La caméra ne fonctionne qu'en **https**, d'où GitHub Pages :
 
 ## Questions possibles à l'oral
 
-- **Pourquoi les éléments se lèvent à 45° et pas à 90° ?** À 90°, quand on filme la carte de face, les éléments sont vus par la tranche et deviennent invisibles. À 45°, ils restent visibles de face (à 71 %) comme de biais. La cigogne et les étoiles sont aussi penchées à 45° vers le spectateur.
+- **Pourquoi les éléments avancent au lieu de se lever comme dans un livre pop-up ?** On regarde souvent la carte de face, sur un écran ou tenue devant soi. Un élément levé à la verticale serait alors vu par la tranche et paraîtrait plat. En avançant vers nous à des profondeurs différentes, avec une bascule au moment de sortir, le relief se voit de face, et encore plus quand on bouge le téléphone.
 
 - **Pourquoi un .glb ?** C'est un seul fichier qui contient la géométrie, les textures et l'animation. Il est léger (1,2 Mo) et lu directement par A-Frame (three.js).
 - **Pourquoi des matériaux sans ombre ?** Pour garder les couleurs exactes du coloriage. Ainsi, le rendu ne dépend pas d'une lumière virtuelle qui ne correspond pas à la vraie pièce.
-- **Pourquoi l'animation se replie à la fin ?** Pour que la boucle soit invisible : la dernière image est identique à la première (tout à plat).
+- **Pourquoi tout rentre dans la carte à la fin ?** Pour que la boucle soit invisible : la dernière image est identique à la première (tout à plat).
 - **Pourquoi des clés de forme pour les feux d'artifice ?** Une gerbe de 26 étincelles est un seul objet. Animer 2 poids (*Explosion* et *Fin*) au lieu de 26 objets rend le fichier environ 3 fois plus léger.
-- **Pourquoi pas de détection des couleurs du coloriage ?** Il faudrait beaucoup de code (shaders) et cela dépend de la lumière. Ici, tout est fait dans Blender, et le coloriage de la personne reste visible sur la carte sous le pop-up.
+- **Pourquoi pas de détection des couleurs du coloriage ?** Il faudrait beaucoup de code (shaders) et cela dépend de la lumière. Ici, tout est fait dans Blender, et le coloriage de la personne reste visible sur la carte, derrière les éléments.

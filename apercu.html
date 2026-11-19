@@ -19,16 +19,16 @@
       <img id="carte-imprimee" src="impression/carte-a-imprimer.png">
     </a-assets>
 
-    <!-- La carte posée sur une table. Elle tourne doucement pour montrer le relief. -->
-    <a-entity id="carte" rotation="-90 0 0"
-              animation="property: rotation; from: -90 0 -18; to: -90 0 18; dir: alternate; loop: true; dur: 9000; easing: easeInOutSine">
+    <!-- La carte vue de face, comme sur un écran. Elle pivote doucement pour montrer le relief. -->
+    <a-entity id="carte"
+              animation="property: rotation; from: 0 -16 0; to: 0 16 0; dir: alternate; loop: true; dur: 9000; easing: easeInOutSine">
       <!-- l'image imprimée (dans index.html, c'est la vraie carte filmée qui la remplace) -->
       <a-plane width="1" height="0.4886" material="src: #carte-imprimee; shader: flat"></a-plane>
       <!-- exactement le même modèle que dans index.html -->
       <a-gltf-model id="popup" src="#carte-popup" rotation="90 0 0" animation-mixer></a-gltf-model>
     </a-entity>
 
-    <a-camera position="0 0.56 0.74" rotation="-33 0 0" fov="50" look-controls="enabled: false" wasd-controls="enabled: false"></a-camera>
+    <a-camera position="0 0.02 0.98" fov="50" look-controls="enabled: false" wasd-controls="enabled: false"></a-camera>
   </a-scene>
 </body>
 </html>
