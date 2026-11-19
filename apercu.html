@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aperçu sans caméra – carte de vœux 2027</title>
+  <!-- Même chose que index.html, mais sans réalité augmentée : pratique pour tester sur un ordinateur -->
+  <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-extras@7.6.0/dist/aframe-extras.min.js"></script>
+  <style>
+    body { margin: 0; }
+  </style>
+</head>
+<body>
+  <a-scene renderer="colorManagement: true; antialias: true" vr-mode-ui="enabled: false" background="color: #2b2d36">
+    <a-assets>
+      <a-asset-item id="carte-popup" src="assets/carte.glb"></a-asset-item>
+      <img id="carte-imprimee" src="impression/carte-a-imprimer.png">
+    </a-assets>
+
+    <!-- La carte posée sur une table. Elle tourne doucement pour montrer le relief. -->
+    <a-entity id="carte" rotation="-90 0 0"
+              animation="property: rotation; from: -90 0 -18; to: -90 0 18; dir: alternate; loop: true; dur: 9000; easing: easeInOutSine">
+      <!-- l'image imprimée (dans index.html, c'est la vraie carte filmée qui la remplace) -->
+      <a-plane width="1" height="0.4886" material="src: #carte-imprimee; shader: flat"></a-plane>
+      <!-- exactement le même modèle que dans index.html -->
+      <a-gltf-model id="popup" src="#carte-popup" rotation="90 0 0" animation-mixer></a-gltf-model>
+    </a-entity>
+
+    <a-camera position="0 0.56 0.74" rotation="-33 0 0" fov="50" look-controls="enabled: false" wasd-controls="enabled: false"></a-camera>
+  </a-scene>
+</body>
+</html>

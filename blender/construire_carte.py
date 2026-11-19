@@ -250,7 +250,7 @@ def construire_cigogne(racine, coll):
         for i, v in enumerate((x, y, z)): cle(cig, 'location', i, f, v)
         cle(cig, 'rotation_euler', 0, f, R(90))
         cle(cig, 'rotation_euler', 2, f, R(cap))
-        for i in range(3): cle(cig, 'scale', i, f, 1.6)
+        for i in range(3): cle(cig, 'scale', i, f, 2.2)
     # elle se repose à sa place
     for f in (252, FIN):
         for i, v in enumerate((hx, hy, 0.002)): cle(cig, 'location', i, f, v)
